@@ -336,6 +336,7 @@ const firebaseConfig = {
             // Potentially disable features that require Firebase
         }
         */
+
        // --- Mock Firestore objects/functions for demo ---
         const mockDb = { /* Represents the Firestore instance */ };
         const collection = (db, name) => ({ db, name, path: name }); // Mock collection function
@@ -345,30 +346,87 @@ const firebaseConfig = {
              now: () => Timestamp.fromDate(new Date())
         };
         const serverTimestamp = () => Timestamp.now(); // Mock serverTimestamp
-        const getDocs = async (query) => { console.log("Firebase Mock: getDocs for", query.path); return { docs: query.mockData || [] }; };
-        const addDoc = async (collRef, data) => { console.log("Firebase Mock: addDoc to", collRef.path); const id = `mock_${generateId()}`; return { id }; };
-        const updateDoc = async (docRef, data) => { console.log("Firebase Mock: updateDoc for", docRef.path); };
-        const deleteDoc = async (docRef) => { console.log("Firebase Mock: deleteDoc for", docRef.path); };
+
+        // *** CORRECTED MOCK QUERY FUNCTION ***
         const query = (collRef, ...constraints) => {
              console.log("Firebase Mock: query on", collRef.path, "with", constraints);
              // Basic mock filtering for demo - THIS IS NOT A REAL QUERY ENGINE
-             const mockData = (collRef.name === 'wins' ? wins : players).map(item => ({ id: item.id, data: () => ({ ...item }) }));
+             // Get the correct source array based on collection name
+             const sourceData = (collRef.name === 'wins' ? wins : players);
+             const mockData = sourceData.map(item => ({ id: item.id, data: () => ({ ...item }) })); // Create mock doc structure
+
              let filteredData = mockData;
              for(const c of constraints) {
                  if (c.type === 'where' && c.field === 'timestamp') {
+                     // Ensure the comparison value (c.value) is also converted correctly
+                     if (!c.value || typeof c.value.toDate !== 'function') {
+                         console.warn("Mock Query: Invalid timestamp comparison value in where clause", c.value);
+                         continue; // Skip this constraint if value is bad
+                     }
+                     const compareTime = c.value.toDate().getTime(); // Get time from the mock Timestamp in the 'where' clause
+
                      filteredData = filteredData.filter(doc => {
-                         const ts = doc.data().timestamp;
-                         if (!ts) return false;
-                         const docDate = ts.toDate ? ts.toDate() : new Date(ts); // Handle mock/real timestamp
-                         if (c.op === '>=') return docDate.getTime() >= c.value.getTime();
-                         if (c.op === '<=') return docDate.getTime() <= c.value.getTime();
-                         return false;
+                         const data = doc.data();
+                         const ts = data.timestamp; // Get the timestamp from the document's data
+                         if (!ts) {
+                             console.warn("Mock Query: Document missing timestamp", doc.id, data);
+                             return false; // Skip if no timestamp
+                         }
+
+                         // Ensure the document's timestamp can be converted
+                         if (typeof ts.toDate !== 'function') {
+                              console.warn("Mock Query: Document timestamp is not a valid mock/Firestore Timestamp object", doc.id, ts);
+                              // Attempt fallback if it's maybe an ISO string or number? (Less ideal)
+                              try {
+                                 const fallbackDate = new Date(ts);
+                                 if (isNaN(fallbackDate.getTime())) return false; // Cannot parse
+                                 const docTime = fallbackDate.getTime();
+                                 if (c.op === '>=') return docTime >= compareTime;
+                                 if (c.op === '<=') return docTime <= compareTime;
+                              } catch (e) {
+                                 return false;
+                              }
+                         } else {
+                             // Primary comparison using .toDate()
+                             const docTime = ts.toDate().getTime();
+                             if (c.op === '>=') return docTime >= compareTime;
+                             if (c.op === '<=') return docTime <= compareTime;
+                         }
+                         return false; // Default if operator not matched
                      });
                  }
+                 // Add more mock constraints here if needed (e.g., orderBy)
              }
-             return { ...collRef, mockData: filteredData }; // Return filtered mock data
+             // Return the filtered mock docs within a structure mimicking QuerySnapshot
+             // *** Important: Return structure expected by the CORRECTED getDocs mock ***
+             return { ...collRef, mockData: filteredData }; // Return object with mockData property
         };
+
+        // *** CORRECTED MOCK GETDOCS FUNCTION ***
+        const getDocs = async (queryOrRef) => {
+            // If it's a collection ref directly (like in loadData), fetch all
+            if(queryOrRef.path && !queryOrRef.mockData) { // Check if it's a basic collection ref
+                 console.log("Firebase Mock: getDocs for collection", queryOrRef.path);
+                 const sourceData = (queryOrRef.name === 'wins' ? wins : players);
+                 const allDocs = sourceData.map(item => ({ id: item.id, data: () => ({ ...item }) }));
+                 return { docs: allDocs }; // Return snapshot structure
+            }
+            // If it's the result of a query mock (has mockData property)
+            else if (queryOrRef.mockData) {
+                 console.log("Firebase Mock: getDocs for pre-filtered query result on", queryOrRef.path);
+                 return { docs: queryOrRef.mockData }; // Return snapshot structure with filtered docs
+            }
+            // If it's some other kind of ref passed (e.g., DocRef), handle appropriately or error
+             console.warn("Firebase Mock: getDocs received unexpected input type", queryOrRef);
+             return { docs: [] }; // Default empty snapshot structure
+        };
+
+        // --- Other mock functions (unchanged) ---
+        const addDoc = async (collRef, data) => { console.log("Firebase Mock: addDoc to", collRef.path); const id = `mock_${generateId()}`; return { id }; };
+        const updateDoc = async (docRef, data) => { console.log("Firebase Mock: updateDoc for", docRef.path); };
+        const deleteDoc = async (docRef) => { console.log("Firebase Mock: deleteDoc for", docRef.path); };
         const where = (field, op, value) => ({ type: 'where', field, op, value }); // Mock where
+
         // --- Use mock DB for demo ---
         const db = mockDb;
 
@@ -424,6 +482,8 @@ const firebaseConfig = {
             return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         };
         const getMonthName = (monthIndex) => ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][monthIndex];
+        const getFullMonthName = (monthIndex) => ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][monthIndex];
+
 
         // Get start/end dates for periods based on a *reference date*
         const getPeriodRange = (period, baseDate = new Date()) => {
@@ -482,7 +542,20 @@ const firebaseConfig = {
                 const winSnapshot = await getDocs(winsCollection);
                 wins = winSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 // Ensure timestamp compatibility (convert if stored differently)
-                 wins = wins.map(w => ({ ...w, timestamp: w.timestamp || Timestamp.fromDate(new Date(w.date)) })); // Example fallback
+                 wins = wins.map(w => {
+                    // If timestamp exists and looks like a Firestore Timestamp (has seconds), use it
+                    if (w.timestamp && typeof w.timestamp.seconds === 'number') {
+                        // In mock, ensure it has .toDate()
+                         if (typeof w.timestamp.toDate !== 'function') {
+                             const mockDate = new Date(w.timestamp.seconds * 1000 + (w.timestamp.nanoseconds || 0) / 1e6);
+                             return { ...w, timestamp: Timestamp.fromDate(mockDate) };
+                         }
+                         return w;
+                    }
+                    // Fallback: try to parse from a potential 'date' field or assume current time if missing
+                    const dateFallback = w.date ? new Date(w.date) : new Date(); // Use 'date' field if present
+                    return { ...w, timestamp: Timestamp.fromDate(isNaN(dateFallback.getTime()) ? new Date() : dateFallback) };
+                });
 
                 console.log("Wins loaded:", wins.length);
 
@@ -586,7 +659,7 @@ const firebaseConfig = {
             const player = players.find(p => p.id === playerId);
             if (!player) return;
 
-            const newWin = {
+            const newWinData = {
                 playerId: playerId,
                 // Use Firestore server timestamp for reliability
                 timestamp: serverTimestamp() // In mock: Timestamp.now()
@@ -595,7 +668,7 @@ const firebaseConfig = {
             try {
                 console.log(`Recording win for player '${player.name}' (PlayerID: ${playerId}) in Firestore...`);
                 const winsCollection = collection(db, "wins");
-                const docRef = await addDoc(winsCollection, newWin);
+                const docRef = await addDoc(winsCollection, newWinData);
                 console.log("Win recorded with ID:", docRef.id);
 
                 // Add locally using the *actual* timestamp generated by the mock/server
@@ -605,7 +678,7 @@ const firebaseConfig = {
                      playerId: playerId,
                      // Use a client-side timestamp for immediate UI update in mock
                      // Real Firestore `serverTimestamp` resolves later, might need listener for exact time
-                     timestamp: Timestamp.now()
+                     timestamp: Timestamp.now() // For mock: use client time now
                  };
                  wins.push(winToAddLocally);
 
@@ -625,7 +698,13 @@ const firebaseConfig = {
             if (winIndex === -1) return;
 
             const winToDelete = wins[winIndex];
-            const winDate = winToDelete.timestamp.toDate ? winToDelete.timestamp.toDate() : new Date(); // Get JS Date
+            // Ensure timestamp exists and has toDate method before proceeding
+            if (!winToDelete.timestamp || typeof winToDelete.timestamp.toDate !== 'function') {
+                console.error("Cannot delete win: Invalid timestamp data.", winToDelete);
+                alert("Cannot delete win due to invalid data.");
+                return;
+            }
+            const winDate = winToDelete.timestamp.toDate();
             const today = getTodayDateString();
 
             if (winDate.toDateString() !== today) {
@@ -655,8 +734,11 @@ const firebaseConfig = {
         const getWinsForPeriod = async (period, baseDate = new Date()) => {
             if (!db) return []; // No connection
             const { start, end } = getPeriodRange(period, baseDate);
+
+            // Use mock/real Timestamps for querying
             const startTimestamp = Timestamp.fromDate(start);
             const endTimestamp = Timestamp.fromDate(end);
+
 
             console.log(`Querying Firestore for wins between ${start.toLocaleDateString()} and ${end.toLocaleDateString()}`);
             try {
@@ -664,13 +746,19 @@ const firebaseConfig = {
                 const q = query(winsCollection,
                                 where("timestamp", ">=", startTimestamp),
                                 where("timestamp", "<=", endTimestamp));
+
+                // Use the getDocs mock/function
                 const querySnapshot = await getDocs(q);
+
+                // Process the results assuming querySnapshot.docs exists
                 const periodWins = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
                 console.log(`Found ${periodWins.length} wins for the period.`);
                 return periodWins;
             } catch (error) {
                 console.error("Error querying wins for period:", error);
-                alert("Could not fetch wins for the selected period.");
+                // **Do not alert here, as it can happen during normal refresh**
+                // alert("Could not fetch wins for the selected period.");
                 return []; // Return empty on error
             }
         };
@@ -680,6 +768,8 @@ const firebaseConfig = {
              if (!db) return [];
              const start = new Date(year, 0, 1);
              const end = new Date(year, 11, 31, 23, 59, 59, 999);
+
+             // Use mock/real Timestamps
              const startTimestamp = Timestamp.fromDate(start);
              const endTimestamp = Timestamp.fromDate(end);
 
@@ -689,13 +779,17 @@ const firebaseConfig = {
                  const q = query(winsCollection,
                                  where("timestamp", ">=", startTimestamp),
                                  where("timestamp", "<=", endTimestamp));
-                 const querySnapshot = await getDocs(q);
+
+                 const querySnapshot = await getDocs(q); // Use the mock/real getDocs
+
                  const yearWins = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
                  console.log(`Found ${yearWins.length} wins for ${year}.`);
                  return yearWins;
              } catch (error) {
                  console.error(`Error querying wins for year ${year}:`, error);
-                 alert(`Could not fetch wins for ${year}.`);
+                 // **Do not alert here**
+                 // alert(`Could not fetch wins for ${year}.`);
                  return [];
              }
         };
@@ -750,8 +844,17 @@ const firebaseConfig = {
              todayDateDisplay.textContent = today;
 
              const todaysWins = wins
-                 .filter(win => win.timestamp && (win.timestamp.toDate ? win.timestamp.toDate() : new Date()).toDateString() === today)
-                 .sort((a, b) => (b.timestamp.seconds || 0) - (a.timestamp.seconds || 0)); // Sort by timestamp seconds
+                 .filter(win => {
+                     // Defensive check for valid timestamp before filtering
+                     return win.timestamp && typeof win.timestamp.toDate === 'function' &&
+                            win.timestamp.toDate().toDateString() === today;
+                 })
+                 .sort((a, b) => {
+                     // Defensive check for seconds property during sort
+                     const timeA = a.timestamp && typeof a.timestamp.seconds === 'number' ? a.timestamp.seconds : 0;
+                     const timeB = b.timestamp && typeof b.timestamp.seconds === 'number' ? b.timestamp.seconds : 0;
+                     return timeB - timeA; // Newest first
+                 });
 
              noWinsTodayMsg.classList.toggle('hidden', todaysWins.length > 0);
              if (todaysWins.length === 0) return;
@@ -772,15 +875,20 @@ const firebaseConfig = {
 
          // Main function to update the currently visible dashboard view
          const renderDashboard = async () => {
+             // Add loading indicator maybe?
+             console.log("Rendering dashboard for view:", currentView, "Period:", currentDashboardPeriod, "Date:", currentDisplayDate.toLocaleDateString());
              if (currentView === 'player') {
                   await renderPlayerWinsChart(currentDashboardPeriod, currentDisplayDate);
              } else if (currentView === 'monthly') {
                   await renderMonthlyBreakdownChart(currentDisplayDate.getFullYear());
              }
+             // Remove loading indicator
          };
 
 
          const renderPlayerWinsChart = async (period, displayDate) => {
+             let playerData = []; // Declare here to ensure it's always defined
+
              // Update active period button
              dashboardControls.querySelectorAll('button').forEach(btn => {
                  btn.classList.toggle('active', btn.dataset.period === period);
@@ -790,6 +898,7 @@ const firebaseConfig = {
              const { start, end } = getPeriodRange(period, displayDate);
              let titleText = '';
              const today = new Date();
+             today.setHours(0,0,0,0); // For accurate date comparison
              const isCurrentPeriod = displayDate.toDateString().startsWith(today.toDateString().substring(0,3)) // Rough check if it's the 'current' week/month/year start
                                        && getPeriodRange(period, today).start.toDateString() === start.toDateString();
 
@@ -798,9 +907,10 @@ const firebaseConfig = {
                      titleText = isCurrentPeriod ? 'Wins This Week' : `Week of ${start.toLocaleDateString()}`;
                      break;
                  case 'month':
+                     const monthName = getFullMonthName(displayDate.getMonth()); // Use full month name
                      titleText = (isCurrentPeriod && displayDate.getFullYear() === today.getFullYear())
-                                  ? `Wins This ${getMonthName(displayDate.getMonth())}`
-                                  : `Wins ${getMonthName(displayDate.getMonth())} ${displayDate.getFullYear()}`;
+                                  ? `Wins This ${monthName}`
+                                  : `Wins ${monthName} ${displayDate.getFullYear()}`;
                       break;
                  case 'year':
                       titleText = isCurrentPeriod ? `Wins This Year (${displayDate.getFullYear()})` : `Wins ${displayDate.getFullYear()}`;
@@ -809,8 +919,10 @@ const firebaseConfig = {
              winChartTitle.textContent = titleText;
              prevPeriodBtn.classList.remove('hidden');
              nextPeriodBtn.classList.remove('hidden');
-             // Disable next button if the period ends today or later
-             nextPeriodBtn.disabled = end.getTime() >= today.getTime();
+             // Disable next button if the period ends today or later (use end of day for comparison)
+             const todayEndOfDay = new Date();
+             todayEndOfDay.setHours(23, 59, 59, 999);
+             nextPeriodBtn.disabled = end.getTime() >= todayEndOfDay.getTime();
 
 
              const periodWins = await getWinsForPeriod(period, displayDate);
@@ -821,24 +933,31 @@ const firebaseConfig = {
 
              if (players.length === 0) {
                  noChartDataMsg.textContent = "Add players to see statistics.";
-                 return;
+                 return; // Exit early if no players
              }
+
+             // Calculate wins or set to 0 if no data for the period
              if (!hasData) {
                  noChartDataMsg.textContent = "No wins recorded for this period.";
-                 // Optionally render players with 0 bars
+                 playerData = players.map(p => ({ name: p.name, count: 0 })); // Show players with 0 wins
+             } else {
+                 const winsByPlayer = players.reduce((acc, player) => {
+                     acc[player.id] = { name: player.name, count: 0 };
+                     return acc;
+                 }, {});
+                 periodWins.forEach(win => {
+                     // Ensure win has playerId and it exists in our current player map
+                     if (win.playerId && winsByPlayer[win.playerId]) {
+                         winsByPlayer[win.playerId].count++;
+                     } else if (win.playerId) {
+                         console.warn(`Win found for unknown or deleted player ID: ${win.playerId}`);
+                         // Optionally handle this case, e.g., display as "Unknown"
+                     }
+                 });
+                 playerData = Object.values(winsByPlayer);
              }
 
-             const winsByPlayer = players.reduce((acc, player) => {
-                 acc[player.id] = { name: player.name, count: 0 };
-                 return acc;
-             }, {});
-             periodWins.forEach(win => {
-                 if (winsByPlayer[win.playerId]) {
-                     winsByPlayer[win.playerId].count++;
-                 }
-             });
 
-             const playerData = Object.values(winsByPlayer);
              // **Dynamic Bar Height:** Max wins determines the 100% height mark
              const maxWins = Math.max(1, ...playerData.map(p => p.count));
 
@@ -865,13 +984,21 @@ const firebaseConfig = {
 
              const hasData = yearWins.length > 0;
              noMonthlyChartDataMsg.classList.toggle('hidden', hasData);
-             if (!hasData) return;
+             if (!hasData) {
+                  noMonthlyChartDataMsg.textContent = `No wins recorded for ${year}.`;
+                  return;
+             }
 
              const winsByMonth = Array(12).fill(0); // 0 = Jan, 11 = Dec
              yearWins.forEach(win => {
-                 if (win.timestamp && win.timestamp.toDate) {
+                 // Ensure win has timestamp and toDate before trying to get month
+                 if (win.timestamp && typeof win.timestamp.toDate === 'function') {
                      const monthIndex = win.timestamp.toDate().getMonth();
-                     winsByMonth[monthIndex]++;
+                     if (monthIndex >= 0 && monthIndex < 12) { // Validate month index
+                        winsByMonth[monthIndex]++;
+                     }
+                 } else {
+                     console.warn("Yearly win data missing valid timestamp:", win);
                  }
              });
 
@@ -915,7 +1042,7 @@ const firebaseConfig = {
              addPlayerError.textContent = "";
          });
 
-        playerListManagementUl.addEventListener('click', (e) => { /* ... (delete/rename logic - unchanged) ... */
+        playerListManagementUl.addEventListener('click', (e) => {
             const target = e.target;
             const playerEntry = target.closest('.player-management-entry');
             if (!playerEntry) return;
@@ -925,6 +1052,16 @@ const firebaseConfig = {
                 deletePlayer(playerId);
             }
             if (target.classList.contains('rename-btn')) {
+                // Hide other rename forms if any are open
+                playerListManagementUl.querySelectorAll('.rename-controls:not(.hidden)').forEach(ctrl => {
+                    const entry = ctrl.closest('.player-management-entry');
+                    if (entry && entry !== playerEntry) { // Don't close the one we're opening
+                         entry.querySelector('.rename-controls').classList.add('hidden');
+                         entry.querySelector('.player-name-display').classList.remove('hidden');
+                         entry.querySelector('.action-buttons').classList.remove('hidden');
+                    }
+                });
+                // Show current rename form
                 playerEntry.querySelector('.player-name-display').classList.add('hidden');
                 playerEntry.querySelector('.action-buttons').classList.add('hidden');
                 playerEntry.querySelector('.rename-controls').classList.remove('hidden');
@@ -964,9 +1101,11 @@ const firebaseConfig = {
             if (e.target.tagName === 'BUTTON' && e.target.dataset.period) {
                 currentDashboardPeriod = e.target.dataset.period;
                 currentDisplayDate = new Date(); // Reset to current date when changing period type
-                currentView = 'player'; // Switch back to player view when changing period
-                switchToPlayerView(); // Ensure player view is visible and update UI
-                renderDashboard();
+                if (currentView !== 'player') {
+                     switchToPlayerView(); // Switch back to player view if needed
+                } else {
+                     renderDashboard(); // Otherwise just re-render player view
+                }
             }
         });
 
@@ -975,22 +1114,25 @@ const firebaseConfig = {
         monthlyViewBtn.addEventListener('click', switchToMonthlyView);
 
         function switchToPlayerView() {
+             if (currentView === 'player') return; // No change needed
              currentView = 'player';
              winChartContainer.classList.remove('hidden');
              monthlyChartContainer.classList.add('hidden');
              playerViewBtn.classList.add('active');
              monthlyViewBtn.classList.remove('active');
-             // Ensure main period controls affect the player view
+             // Reset display date to ensure player chart shows current period
+             currentDisplayDate = new Date();
              renderDashboard(); // Re-render the player chart for the current state
         }
         function switchToMonthlyView() {
+             if (currentView === 'monthly') return; // No change needed
              currentView = 'monthly';
              winChartContainer.classList.add('hidden');
              monthlyChartContainer.classList.remove('hidden');
              playerViewBtn.classList.remove('active');
              monthlyViewBtn.classList.add('active');
-             // Reset display date to *this year* when switching to monthly
-             currentDisplayDate = new Date();
+             // Set display date to *this year* when switching to monthly
+             currentDisplayDate = new Date(); // Year will be extracted from this
              renderDashboard(); // Render the monthly chart for the current year
         }
 
@@ -1009,17 +1151,21 @@ const firebaseConfig = {
             if (currentDashboardPeriod === 'week') newDate.setDate(newDate.getDate() + 7);
             else if (currentDashboardPeriod === 'month') newDate.setMonth(newDate.getMonth() + 1);
             else if (currentDashboardPeriod === 'year') newDate.setFullYear(newDate.getFullYear() + 1);
-             // Prevent going past today
-             const { end } = getPeriodRange(currentDashboardPeriod, newDate);
-             if (end.getTime() < new Date().getTime() + 86400000) { // Allow going up to today
+
+            // Prevent going into a future period where the *end* date is after today's end of day
+            const { end } = getPeriodRange(currentDashboardPeriod, newDate);
+            const todayEndOfDay = new Date();
+            todayEndOfDay.setHours(23, 59, 59, 999);
+
+            if (end.getTime() <= todayEndOfDay.getTime()) {
                  currentDisplayDate = newDate;
                  renderDashboard();
-             } else {
-                 // Optionally reset to current period if trying to go too far ahead
-                 currentDisplayDate = new Date();
-                  renderDashboard();
+            } else {
+                 // Don't change the date if the next period is in the future
                  console.log("Cannot navigate to future period beyond today.");
-             }
+                 // Optionally provide feedback to the user (e.g., flash the button)
+                 nextPeriodBtn.disabled = true; // Keep it disabled
+            }
         });
 
         // Monthly Chart Year Navigation
@@ -1035,6 +1181,9 @@ const firebaseConfig = {
              if (newDate.getFullYear() <= new Date().getFullYear()) { // Prevent future years
                  currentDisplayDate = newDate;
                  renderDashboard(); // Will call renderMonthlyBreakdownChart
+             } else {
+                 console.log("Cannot navigate to future year.");
+                 nextYearBtn.disabled = true; // Keep it disabled
              }
          });
 
@@ -1043,8 +1192,8 @@ const firebaseConfig = {
         // Use async IIFE to allow await top-level
         (async () => {
             // Initialize view states before loading data
-             switchToPlayerView(); // Start in player view
-             await loadData(); // Load data and do initial render
+             switchToPlayerView(); // Start in player view (this also calls renderDashboard initially)
+             await loadData(); // Load data and do initial render (renderApp inside loadData calls renderDashboard again)
         })();
 
 
