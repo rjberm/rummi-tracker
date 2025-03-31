@@ -210,8 +210,8 @@
         <section id="dashboard">
             <h2>Dashboard</h2>
             <div class="dashboard-controls">
-                <button data-period="week" class="active">This Week</button>
-                <button data-period="month">This Month</button>
+                <button data-period="month" class="active">This Month</button>
+                <button data-period="week">This Week</button>
                 <button data-period="year">This Year</button>
             </div>
             <div class="dashboard-view-toggle">
@@ -616,7 +616,7 @@
             if (typeof ChartDataLabels !== 'undefined') { Chart.register(ChartDataLabels); }
             else { console.error("ChartDataLabels plugin not loaded!"); }
             currentView = 'player';
-            currentDashboardPeriod = 'week';
+            currentDashboardPeriod = 'month';
             currentDisplayDate = new Date();
             updateTimerDisplay();
             await loadData();
