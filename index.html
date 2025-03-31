@@ -100,15 +100,17 @@
             position: fixed; /* Cover the entire viewport */
             top: 0;
             left: 0;
-            width: 100vw;
-            height: 100vh;
+            right: 0;  /* Add this */
+            bottom: 0; /* Add this */
+            /* width: 100vw; */ /* Remove or comment out */
+            /* height: 100vh; */ /* Remove or comment out */
             background-color: #333333; /* Fallback background */
             z-index: 1000; /* Ensure it's on top */
             display: none; /* Hidden by default */
             flex-direction: column;
             justify-content: center; /* Center content vertically */
             align-items: center; /* Center content horizontally */
-            overflow: hidden; /* Prevent scrollbars */
+            overflow: hidden; /* Keep this to prevent internal content overflow */
         }
         #timerFill {
             position: absolute;
@@ -145,6 +147,25 @@
              background-color: rgba(255, 255, 255, 0.9);
         }
 
+                /* Add CSS for the NEXT button */
+                #nextTimerBtn {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            padding: 12px 24px;
+            font-size: 1.2rem;
+            font-weight: bold;
+            background-color: rgba(255, 255, 255, 0.7); /* Style similar to hide */
+            color: #333;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            cursor: pointer;
+            z-index: 2; /* Above the fill */
+        }
+        #nextTimerBtn:hover {
+             background-color: rgba(255, 255, 255, 0.9);
+        }
+
     </style>
 </head>
 <body>
@@ -154,6 +175,8 @@
         <div id="timerFill"></div>
         <div id="timerDisplay">1:00</div>
         <button id="hideTimerBtn" aria-label="Hide Timer">Hide Timer</button>
+        <!-- Add this button -->
+        <button id="nextTimerBtn" aria-label="Next Turn Timer">NEXT</button>
     </div>
     <!-- Audio Element for Timer -->
     <audio id="timerAudio" src="https://www.dropbox.com/scl/fi/3h6ax7x9tqxm4ghq6w7oh/beep-125033.mp3?rlkey=isiq9pp7ojw2bbptixsintda1&st=qvnl6u95&dl=1" preload="auto"></audio>
@@ -332,6 +355,7 @@
         const timerDisplay = document.getElementById('timerDisplay');
         const hideTimerBtn = document.getElementById('hideTimerBtn');
         const timerAudio = document.getElementById('timerAudio');
+        const nextTimerBtn = document.getElementById('nextTimerBtn');
         // --- Total Wins Display Elements ---
         const totalPlayerWinsDisplay = document.getElementById('totalPlayerWinsDisplay');
         const totalMonthlyWinsDisplay = document.getElementById('totalMonthlyWinsDisplay');
@@ -427,7 +451,28 @@
         const updateTimerFill = () => { const percentage = (timerRemainingSeconds / TIMER_DURATION_SECONDS) * 100; timerFill.style.height = `${percentage}%`; };
         const playBeepSound = () => { timerAudio.currentTime = 0; timerAudio.play().catch(error => { console.warn("Timer audio playback failed:", error); }); };
         const stopTimerInterval = () => { if (timerInterval) { clearInterval(timerInterval); timerInterval = null; } };
-        const startTimerInterval = () => { stopTimerInterval(); timerInterval = setInterval(() => { timerRemainingSeconds--; if (timerRemainingSeconds < 0) { playBeepSound(); timerRemainingSeconds = TIMER_DURATION_SECONDS; } updateTimerDisplay(); updateTimerFill(); }, 1000); };
+        const startTimerInterval = () => {
+            stopTimerInterval(); // Ensure any existing interval is cleared
+            timerInterval = setInterval(() => {
+                timerRemainingSeconds--;
+                if (timerRemainingSeconds < 0) {
+                    playBeepSound(); // Play sound when timer naturally hits zero
+                    timerRemainingSeconds = TIMER_DURATION_SECONDS; // Reset for next cycle
+                }
+                updateTimerDisplay();
+                updateTimerFill();
+            }, 1000);
+        };
+                // --- NEW: Handler for the NEXT button ---
+                const handleNextTimerClick = () => {
+            console.log("Next Timer button clicked");
+            timerRemainingSeconds = TIMER_DURATION_SECONDS; // Reset time to 1:00
+            updateTimerDisplay(); // Update visual time immediately
+            updateTimerFill();    // Update visual fill immediately
+            playBeepSound();      // Play sound immediately on click
+            // Restart the interval timer to ensure it starts counting down from the new value
+            startTimerInterval();
+        };
 
         // --- Wake Lock Functions ---
         const requestWakeLock = async () => {
@@ -551,6 +596,7 @@
         // Timer Event Listeners
         toggleTimerBtn.addEventListener('click', () => { if (isTimerVisible) { hideTimer(); } else { showTimer(); } }); // show/hide are now async but don't need await here
         hideTimerBtn.addEventListener('click', hideTimer); // hideTimer is now async but doesn't need await here
+        nextTimerBtn.addEventListener('click', handleNextTimerClick);
 
         // Visibility Change Listener for Wake Lock
          document.addEventListener('visibilitychange', async () => {
