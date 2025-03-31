@@ -156,8 +156,7 @@
         <button id="hideTimerBtn" aria-label="Hide Timer">Hide Timer</button>
     </div>
     <!-- Audio Element for Timer -->
-    <!-- Replace YOUR_AUDIO_URL.wav with a valid URL -->
-    <audio id="timerAudio" src="https://www.soundjay.com/buttons/beep-07a.wav" preload="auto"></audio>
+    <audio id="timerAudio" src="https://www.dropbox.com/scl/fi/3h6ax7x9tqxm4ghq6w7oh/beep-125033.mp3?rlkey=isiq9pp7ojw2bbptixsintda1&st=qvnl6u95&dl=1" preload="auto"></audio>
 
 
     <div class="app-container">
@@ -204,7 +203,6 @@
                  <p id="totalPlayerWinsDisplay" class="total-wins-display text-center"></p>
                  <div id="chart">
                      <canvas id="playerWinCanvas"></canvas>
-                     <!-- Moved no data message here -->
                      <p id="noChartData" class="no-data hidden">No wins recorded for this period.</p>
                  </div>
             </div>
@@ -219,7 +217,6 @@
                  <p id="totalMonthlyWinsDisplay" class="total-wins-display text-center"></p>
                  <div id="monthlyChart">
                       <canvas id="monthlyWinsCanvas"></canvas>
-                      <!-- Moved no data message here -->
                       <p id="noMonthlyChartData" class="no-data hidden">No wins recorded for this year.</p>
                  </div>
             </div>
@@ -297,6 +294,8 @@
         const TIMER_DURATION_SECONDS = 60;
         let timerRemainingSeconds = TIMER_DURATION_SECONDS;
         let isTimerVisible = false;
+        // --- Wake Lock State ---
+        let wakeLockSentinel = null; // Variable to hold the wake lock
 
         // --- DOM Elements ---
         const togglePlayerManagementBtn = document.getElementById('togglePlayerManagement');
@@ -362,166 +361,64 @@
         const renderTodaysWinsList = () => { todaysWinsListUl.innerHTML = ''; const t = getTodayDateString(); todayDateDisplay.textContent = t; const tW = wins.filter(w => w.timestamp?.toDate().toDateString() === t); noWinsTodayMsg.classList.toggle('hidden', tW.length > 0); if (tW.length === 0) return; tW.forEach(w => { const p = players.find(pl => pl.id === w.playerId); const pN = p ? sanitizeHTML(p.name) : 'Unknown Player'; const li = document.createElement('li'); li.dataset.winId = w.id; li.innerHTML = ` <span class="player-name">${pN}</span> <span class="win-timestamp">${formatTime(w.timestamp)}</span> <button class="delete-win-btn icon-button danger" aria-label="Delete this win">🗑️</button> `; todaysWinsListUl.appendChild(li); }); };
 
         const renderDashboard = () => {
-            // Add console log for debugging date issues
             console.log(`renderDashboard - View: ${currentView}, Period: ${currentDashboardPeriod}, Date: ${currentDisplayDate.toDateString()}`);
-
-            // Update active class for the main period buttons here for consistency
-             dashboardControls.querySelectorAll('button[data-period]').forEach(b => {
-                b.classList.toggle('active', b.dataset.period === currentDashboardPeriod);
-             });
-             // Update active class for view toggle buttons
-             playerViewBtn.classList.toggle('active', currentView === 'player');
-             monthlyViewBtn.classList.toggle('active', currentView === 'monthly');
-
-             // Show/Hide chart containers based on currentView
-             winChartContainer.classList.toggle('hidden', currentView !== 'player');
-             monthlyChartContainer.classList.toggle('hidden', currentView === 'player');
-
-
-            if (currentView === 'player') {
-                renderPlayerWinsChart(currentDashboardPeriod, currentDisplayDate);
-            } else if (currentView === 'monthly') {
-                // Monthly view always uses the year from currentDisplayDate
-                renderMonthlyBreakdownChart(currentDisplayDate.getFullYear());
-            }
+            dashboardControls.querySelectorAll('button[data-period]').forEach(b => { b.classList.toggle('active', b.dataset.period === currentDashboardPeriod); });
+            playerViewBtn.classList.toggle('active', currentView === 'player');
+            monthlyViewBtn.classList.toggle('active', currentView === 'monthly');
+            winChartContainer.classList.toggle('hidden', currentView !== 'player');
+            monthlyChartContainer.classList.toggle('hidden', currentView === 'player');
+            if (currentView === 'player') { renderPlayerWinsChart(currentDashboardPeriod, currentDisplayDate); }
+            else if (currentView === 'monthly') { renderMonthlyBreakdownChart(currentDisplayDate.getFullYear()); }
         };
 
-        // --- Chart.js Player Wins Chart (VERIFIED & REFINED) ---
         const renderPlayerWinsChart = (period, displayDate) => {
-            console.log(`renderPlayerWinsChart - Period: ${period}, Date: ${displayDate.toDateString()}`); // Debug log
+            console.log(`renderPlayerWinsChart - Period: ${period}, Date: ${displayDate.toDateString()}`);
             if (playerWinChartInstance) { playerWinChartInstance.destroy(); playerWinChartInstance = null; }
-            // Active class for period buttons is now handled in renderDashboard
-
             const { start, end } = getPeriodRange(period, displayDate);
             let chartTitleText = '';
             const today = new Date(); today.setHours(0, 0, 0, 0);
             const currentPeriodRange = getPeriodRange(period, today);
-            const isCurrentPeriod = currentPeriodRange.start.getTime() === start.getTime(); // More reliable check
-
-            switch (period) {
-                case 'week':
-                    chartTitleText = isCurrentPeriod ? 'Wins This Week' : `Week of ${start.toLocaleDateString()}`;
-                    break;
-                case 'month':
-                    const monthName = getFullMonthName(displayDate.getMonth());
-                    chartTitleText = isCurrentPeriod ? `Wins This ${monthName}` : `Wins ${monthName} ${displayDate.getFullYear()}`;
-                    break;
-                case 'year':
-                    chartTitleText = isCurrentPeriod ? `Wins This Year (${displayDate.getFullYear()})` : `Wins ${displayDate.getFullYear()}`;
-                    break;
-            }
+            const isCurrentPeriod = currentPeriodRange.start.getTime() === start.getTime();
+            switch (period) { case 'week': chartTitleText = isCurrentPeriod ? 'Wins This Week' : `Week of ${start.toLocaleDateString()}`; break; case 'month': const monthName = getFullMonthName(displayDate.getMonth()); chartTitleText = isCurrentPeriod ? `Wins This ${monthName}` : `Wins ${monthName} ${displayDate.getFullYear()}`; break; case 'year': chartTitleText = isCurrentPeriod ? `Wins This Year (${displayDate.getFullYear()})` : `Wins ${displayDate.getFullYear()}`; break; }
             winChartTitle.textContent = chartTitleText;
-
-            // Prev/Next Button Visibility and State
-            prevPeriodBtn.classList.remove('hidden');
-            nextPeriodBtn.classList.remove('hidden');
+            prevPeriodBtn.classList.remove('hidden'); nextPeriodBtn.classList.remove('hidden');
             const endOfToday = new Date(); endOfToday.setHours(23, 59, 59, 999);
-            // Disable Next if the end of the *displayed* period is today or later
             nextPeriodBtn.disabled = end.getTime() >= endOfToday.getTime();
-
             const periodWins = getWinsForPeriodLocal(period, displayDate);
             const totalWinsCount = periodWins.length;
-
-            // Display total wins (always show, even if 0)
             totalPlayerWinsDisplay.textContent = `Total Wins: ${totalWinsCount}`;
             totalPlayerWinsDisplay.classList.remove('hidden');
-
             const hasPlayers = players.length > 0;
             const hasData = totalWinsCount > 0;
             let playerData = [];
-
-            if (hasPlayers) {
-                const winsByPlayer = players.reduce((acc, p) => { acc[p.id] = { name: p.name, count: 0 }; return acc; }, {});
-                periodWins.forEach(w => { if (w.playerId && winsByPlayer[w.playerId]) { winsByPlayer[w.playerId].count++; } });
-                playerData = Object.values(winsByPlayer);
-                playerData.sort((a, b) => a.name.localeCompare(b.name));
-            }
-
-            // Show/Hide chart canvas vs. "No Data" message
+            if (hasPlayers) { const winsByPlayer = players.reduce((acc, p) => { acc[p.id] = { name: p.name, count: 0 }; return acc; }, {}); periodWins.forEach(w => { if (w.playerId && winsByPlayer[w.playerId]) { winsByPlayer[w.playerId].count++; } }); playerData = Object.values(winsByPlayer); playerData.sort((a, b) => a.name.localeCompare(b.name)); }
             const showChart = hasPlayers && hasData;
             playerWinCanvas.classList.toggle('hidden', !showChart);
             noChartDataMsg.classList.toggle('hidden', showChart);
-
-            if (!hasPlayers) {
-                noChartDataMsg.textContent = "Add players to see statistics.";
-                totalPlayerWinsDisplay.classList.add('hidden'); // Hide total if no players at all
-            } else if (!hasData) {
-                noChartDataMsg.textContent = "No wins recorded for this period.";
-                // Keep total display visible showing "Total Wins: 0"
-            }
-
-            // Only render chart if needed
-            if (showChart) {
-                const ctx = playerWinCanvas.getContext('2d');
-                if (!ctx) { console.error("Failed to get playerWinCanvas context"); return; }
-                const labels = playerData.map(p => p.name);
-                const dataCounts = playerData.map(p => p.count);
-                playerWinChartInstance = new Chart(ctx, {
-                    type: 'bar',
-                    data: { labels: labels, datasets: [{ label: 'Wins', data: dataCounts, backgroundColor: '#219ebc', borderColor: '#1a7f9a', borderWidth: 1 }] },
-                    options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(c) { let l = c.dataset.label || ''; if (l) { l += ': '; } if (c.parsed.y !== null) { l += c.parsed.y + (c.parsed.y === 1 ? ' win' : ' wins'); } return l; } } } } }
-                });
-            }
+            if (!hasPlayers) { noChartDataMsg.textContent = "Add players to see statistics."; totalPlayerWinsDisplay.classList.add('hidden'); }
+            else if (!hasData) { noChartDataMsg.textContent = "No wins recorded for this period."; }
+            if (showChart) { const ctx = playerWinCanvas.getContext('2d'); if (!ctx) { console.error("Failed to get playerWinCanvas context"); return; } const labels = playerData.map(p => p.name); const dataCounts = playerData.map(p => p.count); playerWinChartInstance = new Chart(ctx, { type: 'bar', data: { labels: labels, datasets: [{ label: 'Wins', data: dataCounts, backgroundColor: '#219ebc', borderColor: '#1a7f9a', borderWidth: 1 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(c) { let l = c.dataset.label || ''; if (l) { l += ': '; } if (c.parsed.y !== null) { l += c.parsed.y + (c.parsed.y === 1 ? ' win' : ' wins'); } return l; } } } } } }); }
         };
 
-        // --- Chart.js Monthly Breakdown Chart (VERIFIED & REFINED) ---
         const renderMonthlyBreakdownChart = (year) => {
-             console.log(`renderMonthlyBreakdownChart - Year: ${year}`); // Debug log
+            console.log(`renderMonthlyBreakdownChart - Year: ${year}`);
             if (monthlyChartInstance) { monthlyChartInstance.destroy(); monthlyChartInstance = null; }
-
             monthlyChartTitle.textContent = `Monthly Winners for ${year}`;
-            nextYearBtn.disabled = year >= new Date().getFullYear(); // Disable next if current or future year
-
+            nextYearBtn.disabled = year >= new Date().getFullYear();
             const yearWins = getWinsForYearLocal(year);
             const totalWinsCount = yearWins.length;
             const hasData = totalWinsCount > 0;
-
-            // Display total wins (always show, even if 0)
             totalMonthlyWinsDisplay.textContent = `Total Wins: ${totalWinsCount}`;
             totalMonthlyWinsDisplay.classList.remove('hidden');
-
-             // Calculate monthly results AND overall max score (only if hasData)
-             let monthlyResults = [];
-             let overallMaxWinningScore = 0;
-             if(hasData) {
-                 const monthlyPlayerWins = {};
-                 yearWins.forEach(win => { if (win.timestamp && typeof win.timestamp.toDate === 'function' && win.playerId) { const mI = win.timestamp.toDate().getMonth(); monthlyPlayerWins[mI] = monthlyPlayerWins[mI] || {}; monthlyPlayerWins[mI][win.playerId] = (monthlyPlayerWins[mI][win.playerId] || 0) + 1; } });
-                 for (let i = 0; i < 12; i++) { const monthData = monthlyPlayerWins[i]; let winners = []; let maxScore = 0; if (monthData && Object.keys(monthData).length > 0) { maxScore = Math.max(...Object.values(monthData)); if (maxScore > overallMaxWinningScore) { overallMaxWinningScore = maxScore; } winners = Object.entries(monthData) .filter(([_, score]) => score === maxScore) .map(([playerId, _]) => sanitizeHTML(players.find(p => p.id === playerId)?.name ?? 'Unknown')); } monthlyResults.push({ monthIndex: i, winnerNames: winners, winningScore: maxScore }); }
-             } else {
-                 // Create empty results if no data for structure
-                 for (let i = 0; i < 12; i++) {
-                    monthlyResults.push({ monthIndex: i, winnerNames: [], winningScore: 0 });
-                 }
-             }
-
-
-             // Show/Hide chart canvas vs. "No Data" message
-             monthlyWinsCanvas.classList.toggle('hidden', !hasData);
-             noMonthlyChartDataMsg.classList.toggle('hidden', hasData);
-
-             if (!hasData) {
-                noMonthlyChartDataMsg.textContent = `No wins recorded for ${year}.`;
-                // Keep total display visible showing "Total Wins: 0"
-             }
-
-             // Only render chart if needed (and context available)
-             if(hasData) {
-                 const ctx = monthlyWinsCanvas.getContext('2d');
-                 if (!ctx) { console.error("Failed to get monthlyWinsCanvas context"); return; }
-
-                 const labels = monthlyResults.map(r => getMonthName(r.monthIndex));
-                 const dataScores = monthlyResults.map(r => r.winningScore);
-                 const yAxisMax = Math.max(3, overallMaxWinningScore + 2);
-
-                 monthlyChartInstance = new Chart(ctx, {
-                    type: 'bar',
-                    data: { labels: labels, datasets: [{ label: 'Winning Score', data: dataScores, backgroundColor: '#fdc500', borderColor: '#e8b700', borderWidth: 1 }] },
-                    options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, max: yAxisMax, ticks: { stepSize: 1, precision: 0 } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { title: (tooltipItems) => `${getFullMonthName(tooltipItems[0].dataIndex)} ${year}`, label: (context) => { const index = context.dataIndex; const result = monthlyResults[index]; let winnerLabel = ''; if (!result || result.winnerNames.length === 0) winnerLabel = 'Winner: N/A'; else if (result.winnerNames.length === 1) winnerLabel = `Winner: ${result.winnerNames[0]}`; else winnerLabel = `Tie: ${result.winnerNames.join(', ')}`; const scoreLabel = `Score: ${context.parsed.y}`; return [winnerLabel, scoreLabel]; } } }, datalabels: { display: (context) => context.dataset.data[context.dataIndex] > 0, anchor: 'end', align: 'top', offset: -2, color: '#555', font: { size: 10, weight: 'bold' }, formatter: (value, context) => { const index = context.dataIndex; const result = monthlyResults[index]; if (!result || result.winnerNames.length === 0) { return ''; } else if (result.winnerNames.length === 1) { let name = result.winnerNames[0]; return name.length > 8 ? name.substring(0, 7) + '…' : name; } else { return 'Tie'; } } } } }
-                });
-             }
+            let monthlyResults = []; let overallMaxWinningScore = 0;
+            if(hasData) { const monthlyPlayerWins = {}; yearWins.forEach(win => { if (win.timestamp && typeof win.timestamp.toDate === 'function' && win.playerId) { const mI = win.timestamp.toDate().getMonth(); monthlyPlayerWins[mI] = monthlyPlayerWins[mI] || {}; monthlyPlayerWins[mI][win.playerId] = (monthlyPlayerWins[mI][win.playerId] || 0) + 1; } }); for (let i = 0; i < 12; i++) { const monthData = monthlyPlayerWins[i]; let winners = []; let maxScore = 0; if (monthData && Object.keys(monthData).length > 0) { maxScore = Math.max(...Object.values(monthData)); if (maxScore > overallMaxWinningScore) { overallMaxWinningScore = maxScore; } winners = Object.entries(monthData) .filter(([_, score]) => score === maxScore) .map(([playerId, _]) => sanitizeHTML(players.find(p => p.id === playerId)?.name ?? 'Unknown')); } monthlyResults.push({ monthIndex: i, winnerNames: winners, winningScore: maxScore }); } }
+            else { for (let i = 0; i < 12; i++) { monthlyResults.push({ monthIndex: i, winnerNames: [], winningScore: 0 }); } }
+            monthlyWinsCanvas.classList.toggle('hidden', !hasData);
+            noMonthlyChartDataMsg.classList.toggle('hidden', hasData);
+            if (!hasData) { noMonthlyChartDataMsg.textContent = `No wins recorded for ${year}.`; }
+            if(hasData) { const ctx = monthlyWinsCanvas.getContext('2d'); if (!ctx) { console.error("Failed to get monthlyWinsCanvas context"); return; } const labels = monthlyResults.map(r => getMonthName(r.monthIndex)); const dataScores = monthlyResults.map(r => r.winningScore); const yAxisMax = Math.max(3, overallMaxWinningScore + 2); monthlyChartInstance = new Chart(ctx, { type: 'bar', data: { labels: labels, datasets: [{ label: 'Winning Score', data: dataScores, backgroundColor: '#fdc500', borderColor: '#e8b700', borderWidth: 1 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, max: yAxisMax, ticks: { stepSize: 1, precision: 0 } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { title: (tooltipItems) => `${getFullMonthName(tooltipItems[0].dataIndex)} ${year}`, label: (context) => { const index = context.dataIndex; const result = monthlyResults[index]; let winnerLabel = ''; if (!result || result.winnerNames.length === 0) winnerLabel = 'Winner: N/A'; else if (result.winnerNames.length === 1) winnerLabel = `Winner: ${result.winnerNames[0]}`; else winnerLabel = `Tie: ${result.winnerNames.join(', ')}`; const scoreLabel = `Score: ${context.parsed.y}`; return [winnerLabel, scoreLabel]; } } }, datalabels: { display: (context) => context.dataset.data[context.dataIndex] > 0, anchor: 'end', align: 'top', offset: -2, color: '#555', font: { size: 10, weight: 'bold' }, formatter: (value, context) => { const index = context.dataIndex; const result = monthlyResults[index]; if (!result || result.winnerNames.length === 0) { return ''; } else if (result.winnerNames.length === 1) { let name = result.winnerNames[0]; return name.length > 8 ? name.substring(0, 7) + '…' : name; } else { return 'Tie'; } } } } } }); }
         };
 
-        // Renders all sections (calls renderDashboard)
         const renderApp = () => { renderPlayerManagementList(); renderScoreTrackingList(); renderTodaysWinsList(); renderDashboard(); };
 
         // --- Timer Functions ---
@@ -531,8 +428,68 @@
         const playBeepSound = () => { timerAudio.currentTime = 0; timerAudio.play().catch(error => { console.warn("Timer audio playback failed:", error); }); };
         const stopTimerInterval = () => { if (timerInterval) { clearInterval(timerInterval); timerInterval = null; } };
         const startTimerInterval = () => { stopTimerInterval(); timerInterval = setInterval(() => { timerRemainingSeconds--; if (timerRemainingSeconds < 0) { playBeepSound(); timerRemainingSeconds = TIMER_DURATION_SECONDS; } updateTimerDisplay(); updateTimerFill(); }, 1000); };
-        const showTimer = () => { if (isTimerVisible) return; isTimerVisible = true; timerOverlay.style.display = 'flex'; toggleTimerBtn.textContent = '⏱️ Hide Timer'; toggleTimerBtn.setAttribute('aria-label', 'Hide Timer'); timerRemainingSeconds = TIMER_DURATION_SECONDS; updateTimerDisplay(); updateTimerFill(); startTimerInterval(); };
-        const hideTimer = () => { if (!isTimerVisible) return; isTimerVisible = false; timerOverlay.style.display = 'none'; toggleTimerBtn.textContent = '⏱️ Timer'; toggleTimerBtn.setAttribute('aria-label', 'Show Timer'); stopTimerInterval(); timerAudio.pause(); timerAudio.currentTime = 0; timerFill.style.height = '100%'; timerDisplay.textContent = formatTimerTime(TIMER_DURATION_SECONDS); };
+
+        // --- Wake Lock Functions ---
+        const requestWakeLock = async () => {
+            if ('wakeLock' in navigator) {
+                try {
+                    wakeLockSentinel = await navigator.wakeLock.request('screen');
+                    console.log('Screen Wake Lock requested successfully.');
+                    wakeLockSentinel.addEventListener('release', () => {
+                        console.log('Screen Wake Lock was released');
+                        // Check if the timer should still be visible when lock is auto-released
+                        if (isTimerVisible) {
+                            console.warn('Wake Lock released unexpectedly while timer visible.');
+                            // Optional: You could try re-requesting immediately, but it might fail if the reason for release persists (e.g., tab hidden)
+                        }
+                        wakeLockSentinel = null;
+                    });
+                } catch (err) {
+                    console.error(`Wake Lock Request Failed: ${err.name}, ${err.message}`);
+                    wakeLockSentinel = null;
+                }
+            } else {
+                console.warn('Screen Wake Lock API not supported.');
+            }
+        };
+
+        const releaseWakeLock = async () => {
+            if (wakeLockSentinel !== null && typeof wakeLockSentinel.release === 'function') {
+                try {
+                    await wakeLockSentinel.release();
+                    wakeLockSentinel = null;
+                    console.log('Screen Wake Lock released.');
+                } catch (err) {
+                    console.error(`Failed to release Wake Lock: ${err.name}, ${err.message}`);
+                    // wakeLockSentinel might still be assigned even if release failed,
+                    // but setting it null is generally safe as we check before use.
+                    wakeLockSentinel = null;
+                }
+            }
+        };
+
+        // --- Timer Show/Hide (Modified for Wake Lock) ---
+        const showTimer = async () => { // Made async
+            if (isTimerVisible) return;
+            isTimerVisible = true;
+            timerOverlay.style.display = 'flex';
+            toggleTimerBtn.textContent = '⏱️ Hide Timer';
+            toggleTimerBtn.setAttribute('aria-label', 'Hide Timer');
+            await requestWakeLock(); // Request wake lock
+            timerRemainingSeconds = TIMER_DURATION_SECONDS;
+            updateTimerDisplay(); updateTimerFill(); startTimerInterval();
+        };
+
+        const hideTimer = async () => { // Made async
+            if (!isTimerVisible) return;
+            isTimerVisible = false;
+            timerOverlay.style.display = 'none';
+            toggleTimerBtn.textContent = '⏱️ Timer';
+            toggleTimerBtn.setAttribute('aria-label', 'Show Timer');
+            await releaseWakeLock(); // Release wake lock
+            stopTimerInterval(); timerAudio.pause(); timerAudio.currentTime = 0;
+            timerFill.style.height = '100%'; timerDisplay.textContent = formatTimerTime(TIMER_DURATION_SECONDS);
+        };
 
 
         // --- Event Listeners ---
@@ -548,134 +505,72 @@
         scoreTrackingListUl.addEventListener('click', (e) => { if (e.target.classList.contains('add-win-btn')) { recordWin(e.target.dataset.playerId); } });
         todaysWinsListUl.addEventListener('click', (e) => { if (e.target.classList.contains('delete-win-btn')) { const wL = e.target.closest('li'); if (wL?.dataset.winId) deleteWin(wL.dataset.winId); } });
 
-        // --- REVISED: Dashboard Controls Listener ---
+        // Dashboard Controls Listener
         dashboardControls.addEventListener('click', (e) => {
             if (e.target.tagName === 'BUTTON' && e.target.dataset.period) {
                 const newlySelectedPeriod = e.target.dataset.period;
-                console.log(`Dashboard Control Clicked: ${newlySelectedPeriod}`); // Debug log
-
-                // Always reset to today's date when a main period button is clicked
+                console.log(`Dashboard Control Clicked: ${newlySelectedPeriod}`);
                 currentDisplayDate = new Date();
-                console.log(`Date RESET to: ${currentDisplayDate.toDateString()}`); // Debug log
-
-                currentDashboardPeriod = newlySelectedPeriod; // Update the period
-
-                // Always switch to player view when a main period button is clicked
+                console.log(`Date RESET to: ${currentDisplayDate.toDateString()}`);
+                currentDashboardPeriod = newlySelectedPeriod;
                 currentView = 'player';
-
-                // Re-render everything based on the new state
                 renderDashboard();
             }
         });
 
-        // --- REVISED: View Toggle Button Listeners ---
+        // View Toggle Button Listeners
         playerViewBtn.addEventListener('click', () => {
-             console.log("Player View Button Clicked"); // Debug log
-             if (currentView !== 'player') {
-                 currentView = 'player';
-                 // Keep currentDisplayDate as is, don't reset here
-                 renderDashboard();
-             }
+             console.log("Player View Button Clicked");
+             if (currentView !== 'player') { currentView = 'player'; renderDashboard(); }
          });
-
         monthlyViewBtn.addEventListener('click', () => {
-            console.log("Monthly View Button Clicked"); // Debug log
-             if (currentView !== 'monthly') {
-                 currentView = 'monthly';
-                 // Keep currentDisplayDate as is, don't reset here
-                 // renderDashboard will use the year from currentDisplayDate
-                 renderDashboard();
-             }
+            console.log("Monthly View Button Clicked");
+             if (currentView !== 'monthly') { currentView = 'monthly'; renderDashboard(); }
          });
 
-
-        // --- REVISED: Period Navigation Button Listeners ---
+        // Period Navigation Button Listeners
         prevPeriodBtn.addEventListener('click', () => {
-            const oldDate = new Date(currentDisplayDate); // Copy date
-            if (currentDashboardPeriod === 'week') {
-                currentDisplayDate.setDate(currentDisplayDate.getDate() - 7);
-            } else if (currentDashboardPeriod === 'month') {
-                currentDisplayDate.setMonth(currentDisplayDate.getMonth() - 1);
-            } else if (currentDashboardPeriod === 'year') {
-                currentDisplayDate.setFullYear(currentDisplayDate.getFullYear() - 1);
-            }
-            console.log(`Prev Period Clicked. Old: ${oldDate.toDateString()}, New: ${currentDisplayDate.toDateString()}`); // Debug log
-            renderDashboard(); // Re-render with the new date
-        });
-
-        nextPeriodBtn.addEventListener('click', () => {
-             const oldDate = new Date(currentDisplayDate); // Copy date
-            if (currentDashboardPeriod === 'week') {
-                currentDisplayDate.setDate(currentDisplayDate.getDate() + 7);
-            } else if (currentDashboardPeriod === 'month') {
-                // Important: Check if adding a month goes past the current month/year
-                 const tempDate = new Date(currentDisplayDate);
-                 tempDate.setMonth(tempDate.getMonth() + 1);
-                 const today = new Date();
-                 // Only advance if the *start* of the next month is not after the *start* of the current month
-                 if (tempDate.getFullYear() < today.getFullYear() || (tempDate.getFullYear() === today.getFullYear() && tempDate.getMonth() <= today.getMonth())) {
-                    currentDisplayDate.setMonth(currentDisplayDate.getMonth() + 1);
-                 } else {
-                     console.log("Next month navigation blocked: Would go past current month."); // Debug log
-                     nextPeriodBtn.disabled = true; // Ensure button is disabled
-                     return; // Don't render if not moving
-                 }
-
-            } else if (currentDashboardPeriod === 'year') {
-                 // Only advance if next year is not past current year
-                 const nextYear = currentDisplayDate.getFullYear() + 1;
-                 if (nextYear <= new Date().getFullYear()) {
-                    currentDisplayDate.setFullYear(nextYear);
-                 } else {
-                     console.log("Next year navigation blocked: Would go past current year."); // Debug log
-                     nextPeriodBtn.disabled = true; // Ensure button is disabled
-                     return; // Don't render if not moving
-                 }
-            }
-             console.log(`Next Period Clicked. Old: ${oldDate.toDateString()}, New: ${currentDisplayDate.toDateString()}`); // Debug log
-            renderDashboard(); // Re-render with the new date
-        });
-
-        prevYearBtn.addEventListener('click', () => { // For Monthly View
-            const oldDate = new Date(currentDisplayDate); // Copy date
-            currentDisplayDate.setFullYear(currentDisplayDate.getFullYear() - 1);
-             console.log(`Prev Year Clicked. Old: ${oldDate.toDateString()}, New: ${currentDisplayDate.toDateString()}`); // Debug log
+            const oldDate = new Date(currentDisplayDate);
+            if (currentDashboardPeriod === 'week') { currentDisplayDate.setDate(currentDisplayDate.getDate() - 7); }
+            else if (currentDashboardPeriod === 'month') { currentDisplayDate.setMonth(currentDisplayDate.getMonth() - 1); }
+            else if (currentDashboardPeriod === 'year') { currentDisplayDate.setFullYear(currentDisplayDate.getFullYear() - 1); }
+            console.log(`Prev Period Clicked. Old: ${oldDate.toDateString()}, New: ${currentDisplayDate.toDateString()}`);
             renderDashboard();
         });
-
-        nextYearBtn.addEventListener('click', () => { // For Monthly View
-             const oldDate = new Date(currentDisplayDate); // Copy date
-            const nextYear = currentDisplayDate.getFullYear() + 1;
-             if (nextYear <= new Date().getFullYear()) { // Check against current year
-                 currentDisplayDate.setFullYear(nextYear);
-                  console.log(`Next Year Clicked. Old: ${oldDate.toDateString()}, New: ${currentDisplayDate.toDateString()}`); // Debug log
-                 renderDashboard();
-             } else {
-                  console.log("Next year navigation blocked: Would go past current year."); // Debug log
-                 nextYearBtn.disabled = true; // Ensure button is disabled
-             }
+        nextPeriodBtn.addEventListener('click', () => {
+            const oldDate = new Date(currentDisplayDate);
+            if (currentDashboardPeriod === 'week') { currentDisplayDate.setDate(currentDisplayDate.getDate() + 7); }
+            else if (currentDashboardPeriod === 'month') { const tempDate = new Date(currentDisplayDate); tempDate.setMonth(tempDate.getMonth() + 1); const today = new Date(); if (tempDate.getFullYear() < today.getFullYear() || (tempDate.getFullYear() === today.getFullYear() && tempDate.getMonth() <= today.getMonth())) { currentDisplayDate.setMonth(currentDisplayDate.getMonth() + 1); } else { console.log("Next month navigation blocked."); nextPeriodBtn.disabled = true; return; } }
+            else if (currentDashboardPeriod === 'year') { const nextYear = currentDisplayDate.getFullYear() + 1; if (nextYear <= new Date().getFullYear()) { currentDisplayDate.setFullYear(nextYear); } else { console.log("Next year navigation blocked."); nextPeriodBtn.disabled = true; return; } }
+            console.log(`Next Period Clicked. Old: ${oldDate.toDateString()}, New: ${currentDisplayDate.toDateString()}`);
+            renderDashboard();
         });
+        prevYearBtn.addEventListener('click', () => { const oldDate = new Date(currentDisplayDate); currentDisplayDate.setFullYear(currentDisplayDate.getFullYear() - 1); console.log(`Prev Year Clicked. Old: ${oldDate.toDateString()}, New: ${currentDisplayDate.toDateString()}`); renderDashboard(); });
+        nextYearBtn.addEventListener('click', () => { const oldDate = new Date(currentDisplayDate); const nextYear = currentDisplayDate.getFullYear() + 1; if (nextYear <= new Date().getFullYear()) { currentDisplayDate.setFullYear(nextYear); console.log(`Next Year Clicked. Old: ${oldDate.toDateString()}, New: ${currentDisplayDate.toDateString()}`); renderDashboard(); } else { console.log("Next year navigation blocked."); nextYearBtn.disabled = true; } });
 
-        // --- Timer Event Listeners ---
-        toggleTimerBtn.addEventListener('click', () => { if (isTimerVisible) { hideTimer(); } else { showTimer(); } });
-        hideTimerBtn.addEventListener('click', hideTimer);
+        // Timer Event Listeners
+        toggleTimerBtn.addEventListener('click', () => { if (isTimerVisible) { hideTimer(); } else { showTimer(); } }); // show/hide are now async but don't need await here
+        hideTimerBtn.addEventListener('click', hideTimer); // hideTimer is now async but doesn't need await here
+
+        // Visibility Change Listener for Wake Lock
+         document.addEventListener('visibilitychange', async () => {
+            // Re-request wake lock if page becomes visible, timer is active, and lock was released
+            if (document.visibilityState === 'visible' && isTimerVisible && !wakeLockSentinel) {
+                console.log("Page visible, re-requesting wake lock for active timer.");
+                await requestWakeLock();
+            }
+         });
 
 
         // --- Initial Load ---
         (async () => {
-            // Register plugin globally
-            if (typeof ChartDataLabels !== 'undefined') {
-                Chart.register(ChartDataLabels);
-            } else { console.error("ChartDataLabels plugin not loaded!"); }
-
-            // Set Initial State
+            if (typeof ChartDataLabels !== 'undefined') { Chart.register(ChartDataLabels); }
+            else { console.error("ChartDataLabels plugin not loaded!"); }
             currentView = 'player';
             currentDashboardPeriod = 'week';
-            currentDisplayDate = new Date(); // Start with today's date
-
-            // Set initial timer display text correctly
+            currentDisplayDate = new Date();
             updateTimerDisplay();
-            await loadData(); // Load player and win data (will trigger renderApp -> renderDashboard)
+            await loadData();
         })();
 
     </script>
