@@ -6,7 +6,7 @@
     <title>Rummikub Win Tracker</title>
     <!-- 1. Include Chart.js Library -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- 2. Include Chart.js Datalabels Plugin (AFTER Chart.js) 1-->
+    <!-- 2. Include Chart.js Datalabels Plugin (AFTER Chart.js) -->
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
     <style>
         /* --- Basic Reset & Defaults --- */
@@ -53,27 +53,52 @@
         #playerManagement.hidden { display: none; }
         .player-management-entry { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee; }
         .player-management-entry:last-child { border-bottom: none; }
-        .player-management-entry span { flex-grow: 1; margin-right: 10px; }
+        .player-management-entry span.player-name-display { flex-grow: 1; margin-right: 10px; } /* Target specific span */
         .rename-controls { display: flex; align-items: center; }
         .rename-controls input { width: 120px; margin-bottom: 0; margin-right: 5px; font-size: 0.9rem; padding: 5px 8px; }
         /* --- Score Tracking Section --- */
         #scoreTrackingList li, #todaysWinsList li { display: flex; justify-content: space-between; align-items: center; padding: 12px 5px; border-bottom: 1px solid #eee; }
         #scoreTrackingList li:last-child, #todaysWinsList li:last-child { border-bottom: none; }
-        .player-name { font-weight: bold; margin-right: 10px; flex-grow: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+        /* UPDATED: Player Info Wrapper Styling */
+        .player-info {
+            flex-grow: 1; /* Take up available space */
+            margin-right: 10px; /* Space before button */
+        }
+        .player-name {
+            font-weight: bold;
+            display: block; /* Ensure name is on its own line */
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+        }
         .win-timestamp { font-size: 0.85em; color: #666; margin-left: 10px; margin-right: 10px; white-space: nowrap; }
+
+        /* UPDATED: Win Feedback Message Styling */
+        .win-feedback {
+            display: block; /* Place on new line */
+            font-size: 0.85em; /* Slightly smaller */
+            color: #28a745; /* Green */
+            margin-top: 2px; /* Small space below name */
+            font-style: italic;
+            animation: fadeOut 3s forwards; /* Make it fade out */
+            line-height: 1.2; /* Adjust line height if needed */
+        }
+        @keyframes fadeOut {
+            0% { opacity: 1; }
+            80% { opacity: 1; } /* Stay visible for most of the duration */
+            100% { opacity: 0; }
+        }
+
         /* --- Dashboard --- */
         .dashboard-controls { display: flex; justify-content: space-around; margin-bottom: 15px; flex-wrap: wrap; }
         .dashboard-controls button { flex-grow: 1; margin: 5px; background-color: #f8f9fa; color: #0b4f6c; border: 1px solid #dee2e6; }
         .dashboard-controls button.active { background-color: #0b4f6c; color: #fff; font-weight: bold; border-color: #0b4f6c; }
         .dashboard-view-toggle { text-align: center; margin-bottom: 15px; }
-                .dashboard-view-toggle .small-nav-button {
+        .dashboard-view-toggle .small-nav-button {
             background-color: #e9ecef;  /* Light grey background */
             color: #495057;           /* Dark grey text */
             border: 1px solid #ced4da; /* Visible but subtle border */
             font-weight: normal;       /* Ensure text is not bold */
         }
-
-        /* Style for the ACTIVE view toggle button */
         .dashboard-view-toggle .small-nav-button.active {
             background-color: #0b4f6c;  /* Dark blue background (matches period buttons) */
             color: #ffffff;           /* White text */
@@ -90,13 +115,11 @@
         .hidden { display: none !important; }
         .text-center { text-align: center; }
         .error-message { color: #d95a3a; font-size: 0.9em; margin-top: -5px; margin-bottom: 10px; }
-        /* Update .no-data positioning */
         .no-data {
             color: #6c757d;
             text-align: center;
             padding: 20px;
             font-style: italic;
-            /* Remove absolute positioning to allow it inside normal flow */
             margin-top: 20px; /* Add some space */
         }
         /* --- List Styling --- */
@@ -110,79 +133,57 @@
             margin-bottom: 10px;
             font-weight: bold;
         }
-        /* --- Timer Overlay Styles --- */
-        #timerOverlay {
-            position: fixed; /* Cover the entire viewport */
-            top: 0;
-            left: 0;
-            right: 0;  /* Add this */
-            bottom: 0; /* Add this */
-            /* width: 100vw; */ /* Remove or comment out */
-            /* height: 100vh; */ /* Remove or comment out */
-            background-color: #333333; /* Fallback background */
-            z-index: 1000; /* Ensure it's on top */
-            display: none; /* Hidden by default */
-            flex-direction: column;
-            justify-content: center; /* Center content vertically */
-            align-items: center; /* Center content horizontally */
-            overflow: hidden; /* Keep this to prevent internal content overflow */
+        /* --- Today's Summary Style --- */
+        .todays-summary {
+            font-size: 0.95em;
+            color: #444;
+            background-color: #eef3f5; /* Light background */
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin-bottom: 15px; /* Space before the list */
+            border-left: 3px solid #219ebc; /* Accent border */
         }
-        #timerFill {
-            position: absolute;
-            bottom: 0; /* Start fill from the bottom */
-            left: 0;
-            width: 100%;
-            height: 100%; /* Start fully green */
-            background-color: #4CAF50; /* Green background */
-            transition: height 0.1s linear; /* Smooth height transition */
-            z-index: 1; /* Behind text and button */
+        .todays-summary.hidden {
+            display: none;
         }
-        #timerDisplay {
-            font-size: 10em; /* Large timer text */
-            font-weight: bold;
-            color: white;
-            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
-            z-index: 2; /* Above the fill */
-            position: relative;
+        .todays-summary span { /* Style for individual player summaries */
+             display: inline-block; /* Allow spacing */
+             margin-right: 15px; /* Space between players */
         }
-        #hideTimerBtn {
-            position: absolute;
-            top: 20px;
-            right: 20px;
-            padding: 12px 24px;
-            font-size: 1.2rem;
-            background-color: rgba(255, 255, 255, 0.7); /* Semi-transparent white */
-            color: #333;
-            border: 1px solid #ccc;
-            border-radius: 5px;
-            cursor: pointer;
-            z-index: 2; /* Above the fill */
-        }
-        #hideTimerBtn:hover {
-             background-color: rgba(255, 255, 255, 0.9);
+        .todays-summary span:last-child {
+            margin-right: 0;
         }
 
-                /* Add CSS for the NEXT button */
-                #nextTimerBtn {
-            /* position: absolute; */ /* REMOVED */
-            /* bottom: 20px; */    /* REMOVED */
-            /* right: 20px; */     /* REMOVED */
-            margin-top: 25px;     /* ADDED - Space below timer text */
-            padding: 18px 40px;   /* INCREASED - Make button bigger */
-            font-size: 1.8rem;    /* INCREASED - Make text bigger */
-            min-width: 150px;     /* ADDED - Ensure a minimum width */
-            font-weight: bold;
-            background-color: rgba(255, 255, 255, 0.7);
-            color: #333;
-            border: 1px solid #ccc;
-            border-radius: 8px;   /* Slightly larger radius? */
-            cursor: pointer;
-            z-index: 2; /* Keep above the fill */
-            transition: background-color 0.2s ease; /* Add smooth hover */
+        /* --- Timer Overlay Styles --- */
+        #timerOverlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #333333; z-index: 1000;
+            display: none; flex-direction: column; justify-content: center; align-items: center;
+            overflow: hidden;
         }
-        #nextTimerBtn:hover {
-             background-color: rgba(255, 255, 255, 0.95); /* Slightly more opaque on hover */
+        #timerFill {
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 100%;
+            background-color: #4CAF50; transition: height 0.1s linear; z-index: 1;
         }
+        #timerDisplay {
+            font-size: 10em; font-weight: bold; color: white;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+            z-index: 2; position: relative;
+        }
+        #hideTimerBtn {
+            position: absolute; top: 20px; right: 20px;
+            padding: 12px 24px; font-size: 1.2rem;
+            background-color: rgba(255, 255, 255, 0.7); color: #333;
+            border: 1px solid #ccc; border-radius: 5px; cursor: pointer; z-index: 2;
+        }
+        #hideTimerBtn:hover { background-color: rgba(255, 255, 255, 0.9); }
+        #nextTimerBtn {
+            margin-top: 25px; padding: 18px 40px; font-size: 1.8rem; min-width: 150px;
+            font-weight: bold; background-color: rgba(255, 255, 255, 0.7); color: #333;
+            border: 1px solid #ccc; border-radius: 8px; cursor: pointer; z-index: 2;
+            transition: background-color 0.2s ease;
+        }
+        #nextTimerBtn:hover { background-color: rgba(255, 255, 255, 0.95); }
 
     </style>
 </head>
@@ -194,7 +195,6 @@
         <div id="timerDisplay">1:00</div>
         <button id="nextTimerBtn" aria-label="Next Turn Timer">NEXT</button>
         <button id="hideTimerBtn" aria-label="Hide Timer">Hide Timer</button>
-        
     </div>
     <!-- Audio Element for Timer -->
     <audio id="timerAudio" src="https://www.dropbox.com/scl/fi/3h6ax7x9tqxm4ghq6w7oh/beep-125033.mp3?rlkey=isiq9pp7ojw2bbptixsintda1&st=qvnl6u95&dl=1" preload="auto"></audio>
@@ -265,7 +265,7 @@
 
         <!-- Score Tracking Interface -->
         <section id="scoreTracking">
-            <h2>Today's Wins</h2>
+            <h2>Record a Win</h2>
             <ul id="scoreTrackingList"></ul>
              <p id="noPlayersForScoring" class="no-data hidden">Add players in 'Manage Players' to track wins.</p>
         </section>
@@ -273,6 +273,8 @@
         <!-- Today's Recorded Wins Management -->
         <section id="todaysWins">
              <h3>Recorded Today (<span id="todayDateDisplay"></span>)</h3>
+             <!-- ADDED: Summary Div -->
+             <div id="todaysSummary" class="todays-summary hidden"></div>
              <ul id="todaysWinsList"></ul>
              <p id="noWinsToday" class="no-data">No wins recorded yet today.</p>
         </section>
@@ -294,14 +296,15 @@
         import { getFirestore, collection, getDocs, addDoc, deleteDoc, updateDoc, doc, query, where, orderBy, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-firestore.js";
 
         // --- Firebase Configuration (Replace with your actual config!) ---
+        // *** IMPORTANT: Replace with your actual Firebase project configuration ***
         const firebaseConfig = {
-          apiKey: "AIzaSyD-e3H5CaoQobBqFwzDnCGZCUbniZQg_J0",
-          authDomain: "i-am-awesome-tasker.firebaseapp.com",
-          projectId: "i-am-awesome-tasker",
-          storageBucket: "i-am-awesome-tasker.firebasestorage.app",
-          messagingSenderId: "853316153385",
-          appId: "1:853316153385:web:db1fc1304b54a198a82c38",
-          measurementId: "G-ZDBF73CFXS"
+          apiKey: "AIzaSyD-e3H5CaoQobBqFwzDnCGZCUbniZQg_J0", // Replace!
+          authDomain: "i-am-awesome-tasker.firebaseapp.com", // Replace!
+          projectId: "i-am-awesome-tasker", // Replace!
+          storageBucket: "i-am-awesome-tasker.appspot.com", // Replace!
+          messagingSenderId: "853316153385", // Replace!
+          appId: "1:853316153385:web:db1fc1304b54a198a82c38", // Replace!
+          measurementId: "G-ZDBF73CFXS" // Optional: Replace!
         };
 
         // --- Firebase Initialization ---
@@ -320,12 +323,13 @@
             document.querySelectorAll('button').forEach(b => {
                 if(b.id !== 'togglePlayerManagement' && b.id !== 'toggleTimerBtn') b.disabled = true;
             });
+            throw new Error("Firebase initialization failed, stopping script execution.");
         }
 
         // --- Global State ---
         let players = [];
         let wins = [];
-        let currentDashboardPeriod = 'week';
+        let currentDashboardPeriod = 'month'; // Default to month
         let currentDisplayDate = new Date();
         let currentView = 'player'; // 'player' or 'monthly'
         let playerWinChartInstance = null;
@@ -336,7 +340,7 @@
         let timerRemainingSeconds = TIMER_DURATION_SECONDS;
         let isTimerVisible = false;
         // --- Wake Lock State ---
-        let wakeLockSentinel = null; // Variable to hold the wake lock
+        let wakeLockSentinel = null;
 
         // --- DOM Elements ---
         const togglePlayerManagementBtn = document.getElementById('togglePlayerManagement');
@@ -366,6 +370,7 @@
         const todayDateDisplay = document.getElementById('todayDateDisplay');
         const todaysWinsListUl = document.getElementById('todaysWinsList');
         const noWinsTodayMsg = document.getElementById('noWinsToday');
+        const todaysSummaryDiv = document.getElementById('todaysSummary'); // Summary Div Ref
         // --- Timer DOM Elements ---
         const toggleTimerBtn = document.getElementById('toggleTimerBtn');
         const timerOverlay = document.getElementById('timerOverlay');
@@ -386,21 +391,157 @@
         const getFullMonthName = (monthIndex) => ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][monthIndex];
         const getPeriodRange = (period, baseDate = new Date()) => { let start = new Date(baseDate); let end = new Date(baseDate); switch (period) { case 'week': const dayOfWeek = start.getDay(); const diff = start.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); start = new Date(start.setDate(diff)); start.setHours(0, 0, 0, 0); end = new Date(start); end.setDate(start.getDate() + 6); end.setHours(23, 59, 59, 999); break; case 'month': start = new Date(start.getFullYear(), start.getMonth(), 1); start.setHours(0, 0, 0, 0); end = new Date(start.getFullYear(), start.getMonth() + 1, 0); end.setHours(23, 59, 59, 999); break; case 'year': start = new Date(start.getFullYear(), 0, 1); start.setHours(0, 0, 0, 0); end = new Date(start.getFullYear(), 11, 31); end.setHours(23, 59, 59, 999); break; } return { start, end }; };
         const sanitizeHTML = (str) => { const temp = document.createElement('div'); temp.textContent = str; return temp.innerHTML; };
+        const pluralize = (count, singular, plural = null) => { plural = plural ?? singular + 's'; return count === 1 ? `${count} ${singular}` : `${count} ${plural}`; }
+
 
         // --- Data Handling Functions (Firebase) ---
         const loadData = async () => { if (!db) { console.error("DB not available."); return; } console.log("Loading data..."); try { const playersCollection = collection(db, "players"); const playerQuery = query(playersCollection, orderBy("name")); const playerSnapshot = await getDocs(playerQuery); players = playerSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); const winsCollection = collection(db, "wins"); const winSnapshot = await getDocs(winsCollection); wins = winSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); wins = wins.filter(w => w.timestamp && typeof w.timestamp.toDate === 'function'); wins.sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis()); } catch (error) { console.error("Error loading data:", error); const e = document.getElementById('firebaseError'); document.getElementById('firebaseErrorMessage').textContent = `Failed to load data. Error: ${error.message}`; e.style.display = 'block'; players = []; wins = []; } renderApp(); };
         const addPlayer = async (name) => { if (!db) { alert("DB error."); return; } const tN = name.trim(); if (!tN) { addPlayerError.textContent = "Name empty."; return; } if (players.some(p => p.name.toLowerCase() === tN.toLowerCase())) { addPlayerError.textContent = "Name exists."; return; } addPlayerError.textContent = ""; addPlayerBtn.disabled = true; try { const dR = await addDoc(collection(db, "players"), { name: tN }); players.push({ id: dR.id, name: tN }); players.sort((a, b) => a.name.localeCompare(b.name)); renderApp(); newPlayerNameInput.value = ''; } catch (error) { console.error("Error adding:", error); addPlayerError.textContent = `Failed: ${error.message}`; } finally { addPlayerBtn.disabled = false; } };
         const deletePlayer = async (playerId) => { if (!db) { alert("DB error."); return; } const p = players.find(pl => pl.id === playerId); if (!p || !confirm(`Delete ${p.name}? Wins remain as 'Unknown'.`)) return; const dB = playerListManagementUl.querySelector(`.player-management-entry[data-player-id="${playerId}"] .delete-player-btn`); if (dB) dB.disabled = true; try { await deleteDoc(doc(db, "players", playerId)); players = players.filter(pl => pl.id !== playerId); renderApp(); } catch (error) { console.error("Error deleting:", error); alert(`Failed: ${error.message}`); if (dB) dB.disabled = false; } };
         const renamePlayer = async (playerId, newName) => { if (!db) { alert("DB error."); return false; } const tN = newName.trim(); if (!tN) { alert("Name empty."); return false; } if (players.some(p => p.id !== playerId && p.name.toLowerCase() === tN.toLowerCase())) { alert("Name exists."); return false; } const pI = players.findIndex(p => p.id === playerId); if (pI === -1) return false; const en = playerListManagementUl.querySelector(`.player-management-entry[data-player-id="${playerId}"]`); const sB = en?.querySelector('.save-rename-btn'); const cB = en?.querySelector('.cancel-rename-btn'); if(sB) sB.disabled = true; if(cB) cB.disabled = true; try { await updateDoc(doc(db, "players", playerId), { name: tN }); players[pI].name = tN; players.sort((a, b) => a.name.localeCompare(b.name)); renderApp(); return true; } catch (error) { console.error("Error renaming:", error); alert(`Failed: ${error.message}`); if(sB) sB.disabled = false; if(cB) cB.disabled = false; return false; } };
-        const recordWin = async (playerId) => { if (!db) { alert("DB error."); return; } const p = players.find(pl => pl.id === playerId); if (!p) return; const wB = scoreTrackingListUl.querySelector(`button.add-win-btn[data-player-id="${playerId}"]`); if(wB) wB.disabled = true; try { const dR = await addDoc(collection(db, "wins"), { playerId: playerId, timestamp: serverTimestamp() }); wins.unshift({ id: dR.id, playerId: playerId, timestamp: Timestamp.now() }); renderTodaysWinsList(); renderDashboard(); } catch (error) { console.error("Error recording win:", error); alert(`Failed: ${error.message}`); } finally { if(wB) wB.disabled = false; } };
-        const deleteWin = async (winId) => { if (!db) { alert("DB error."); return; } const wI = wins.findIndex(w => w.id === winId); if (wI === -1) return; const wD = wins[wI]; if (!wD.timestamp || typeof wD.timestamp.toDate !== 'function') return; if (!confirm(`Delete win for ${players.find(p=>p.id === wD.playerId)?.name ?? 'Unknown'} at ${formatTime(wD.timestamp)}?`)) return; const dB = todaysWinsListUl.querySelector(`li[data-win-id="${winId}"] .delete-win-btn`); if(dB) dB.disabled = true; try { await deleteDoc(doc(db, "wins", winId)); wins.splice(wI, 1); renderTodaysWinsList(); renderDashboard(); } catch (error) { console.error("Error deleting win:", error); alert(`Failed: ${error.message}`); if(dB) dB.disabled = false; } };
+
+        // --- MODIFIED: recordWin function ---
+        const recordWin = async (playerId) => {
+            if (!db) { alert("DB error."); return; }
+            const player = players.find(pl => pl.id === playerId);
+            if (!player) return;
+
+            const winButton = scoreTrackingListUl.querySelector(`button.add-win-btn[data-player-id="${playerId}"]`);
+            const playerInfoDiv = scoreTrackingListUl.querySelector(`li[data-player-id="${playerId}"] .player-info`); // Find the specific player-info div
+
+            if (winButton) winButton.disabled = true; // Disable button immediately
+
+            // Remove any existing feedback messages for this player first
+            const existingFeedback = playerInfoDiv?.querySelector('.win-feedback');
+            if (existingFeedback) existingFeedback.remove();
+
+            try {
+                const docRef = await addDoc(collection(db, "wins"), {
+                    playerId: playerId,
+                    timestamp: serverTimestamp()
+                });
+
+                const newWin = { id: docRef.id, playerId: playerId, timestamp: Timestamp.now() };
+                wins.unshift(newWin);
+
+                // --- Add Feedback Message ---
+                const playerName = sanitizeHTML(player.name);
+                const feedbackSpan = document.createElement('span');
+                feedbackSpan.className = 'win-feedback';
+                feedbackSpan.textContent = `Win added for ${playerName}!`;
+
+                // Append the feedback span inside the player-info div
+                if (playerInfoDiv) {
+                    playerInfoDiv.appendChild(feedbackSpan);
+                    // Remove the feedback message after 3 seconds
+                    setTimeout(() => {
+                        feedbackSpan.remove();
+                    }, 3000);
+                }
+                // --- End Feedback Message ---
+
+                renderTodaysWinsList();
+                renderDashboard();
+
+            } catch (error) {
+                console.error("Error recording win:", error);
+                alert(`Failed to record win: ${error.message}`);
+            } finally {
+                setTimeout(() => {
+                    if (winButton) winButton.disabled = false;
+                }, 500);
+            }
+        };
+
+        const deleteWin = async (winId) => { if (!db) { alert("DB error."); return; } const wI = wins.findIndex(w => w.id === winId); if (wI === -1) return; const wD = wins[wI]; if (!wD.timestamp || typeof wD.timestamp.toDate !== 'function') return; const pN = players.find(p=>p.id === wD.playerId)?.name ?? 'Unknown Player'; if (!confirm(`Delete win for ${sanitizeHTML(pN)} at ${formatTime(wD.timestamp)}?`)) return; const dB = todaysWinsListUl.querySelector(`li[data-win-id="${winId}"] .delete-win-btn`); if(dB) dB.disabled = true; try { await deleteDoc(doc(db, "wins", winId)); wins.splice(wI, 1); renderTodaysWinsList(); renderDashboard(); } catch (error) { console.error("Error deleting win:", error); alert(`Failed: ${error.message}`); if(dB) dB.disabled = false; } };
         const getWinsForPeriodLocal = (period, baseDate = new Date()) => { const { start, end } = getPeriodRange(period, baseDate); const sT = start.getTime(); const eT = end.getTime(); return wins.filter(w => { if (!w.timestamp || typeof w.timestamp.toDate !== 'function') return false; const wT = w.timestamp.toDate().getTime(); return wT >= sT && wT <= eT; }); };
         const getWinsForYearLocal = (year) => { const s = new Date(year, 0, 1); const e = new Date(year, 11, 31, 23, 59, 59, 999); const sT = s.getTime(); const eT = e.getTime(); return wins.filter(w => { if (!w.timestamp || typeof w.timestamp.toDate !== 'function') return false; const wT = w.timestamp.toDate().getTime(); return wT >= sT && wT <= eT; }); };
 
         // --- Rendering Functions ---
         const renderPlayerManagementList = () => { playerListManagementUl.innerHTML = ''; noPlayersManagedMsg.classList.toggle('hidden', players.length > 0); if (players.length === 0) return; players.forEach(p => { const li = document.createElement('li'); li.className = 'player-management-entry'; li.dataset.playerId = p.id; const sN = sanitizeHTML(p.name); li.innerHTML = ` <span class="player-name-display">${sN}</span> <div class="rename-controls hidden"> <input type="text" class="rename-input" value="${sN}" aria-label="New name for ${sN}"> <button class="save-rename-btn icon-button" aria-label="Save rename">✔️</button> <button class="cancel-rename-btn icon-button secondary" aria-label="Cancel rename">❌</button> </div> <div class="action-buttons"> <button class="rename-btn icon-button secondary" aria-label="Rename ${sN}">✏️ Rename</button> <button class="delete-player-btn icon-button danger" aria-label="Delete ${sN}">🗑️ Delete</button> </div> `; playerListManagementUl.appendChild(li); }); };
-        const renderScoreTrackingList = () => { scoreTrackingListUl.innerHTML = ''; noPlayersForScoringMsg.classList.toggle('hidden', players.length > 0); if (players.length === 0) return; players.forEach(p => { const li = document.createElement('li'); li.dataset.playerId = p.id; const sN = sanitizeHTML(p.name); li.innerHTML = ` <span class="player-name">${sN}</span> <button class="add-win-btn" data-player-id="${p.id}">+ Win</button> `; scoreTrackingListUl.appendChild(li); }); };
-        const renderTodaysWinsList = () => { todaysWinsListUl.innerHTML = ''; const t = getTodayDateString(); todayDateDisplay.textContent = t; const tW = wins.filter(w => w.timestamp?.toDate().toDateString() === t); noWinsTodayMsg.classList.toggle('hidden', tW.length > 0); if (tW.length === 0) return; tW.forEach(w => { const p = players.find(pl => pl.id === w.playerId); const pN = p ? sanitizeHTML(p.name) : 'Unknown Player'; const li = document.createElement('li'); li.dataset.winId = w.id; li.innerHTML = ` <span class="player-name">${pN}</span> <span class="win-timestamp">${formatTime(w.timestamp)}</span> <button class="delete-win-btn icon-button danger" aria-label="Delete this win">🗑️</button> `; todaysWinsListUl.appendChild(li); }); };
+
+        // --- MODIFIED: renderScoreTrackingList function ---
+        const renderScoreTrackingList = () => {
+            scoreTrackingListUl.innerHTML = '';
+            noPlayersForScoringMsg.classList.toggle('hidden', players.length > 0);
+            if (players.length === 0) return;
+
+            players.forEach(p => {
+                const li = document.createElement('li');
+                li.dataset.playerId = p.id;
+                const sN = sanitizeHTML(p.name);
+                // Added .player-info wrapper around the name span
+                li.innerHTML = `
+                    <div class="player-info">
+                        <span class="player-name">${sN}</span>
+                        <!-- Feedback will be inserted here by recordWin -->
+                    </div>
+                    <button class="add-win-btn" data-player-id="${p.id}">+ Win</button>
+                `;
+                scoreTrackingListUl.appendChild(li);
+            });
+        };
+
+
+        // --- renderTodaysWinsList function (includes summary logic) ---
+        const renderTodaysWinsList = () => {
+            todaysWinsListUl.innerHTML = ''; // Clear existing list items
+            todaysSummaryDiv.innerHTML = ''; // Clear existing summary
+            todaysSummaryDiv.classList.add('hidden'); // Hide summary by default
+
+            const todayStr = getTodayDateString();
+            todayDateDisplay.textContent = todayStr;
+
+            const todaysWins = wins.filter(w => w.timestamp?.toDate().toDateString() === todayStr);
+
+            noWinsTodayMsg.classList.toggle('hidden', todaysWins.length > 0);
+
+            if (todaysWins.length > 0) {
+                // --- Calculate Summary ---
+                const winsByPlayerToday = todaysWins.reduce((acc, win) => {
+                    acc[win.playerId] = (acc[win.playerId] || 0) + 1;
+                    return acc;
+                }, {});
+
+                const summaryItems = [];
+                const sortedPlayerIds = Object.keys(winsByPlayerToday).sort((a, b) => {
+                    const playerA = players.find(p => p.id === a);
+                    const playerB = players.find(p => p.id === b);
+                    const nameA = playerA ? playerA.name : 'Unknown';
+                    const nameB = playerB ? playerB.name : 'Unknown';
+                    return nameA.localeCompare(nameB);
+                });
+
+                sortedPlayerIds.forEach(playerId => {
+                     const count = winsByPlayerToday[playerId];
+                     const player = players.find(p => p.id === playerId);
+                     const playerName = player ? sanitizeHTML(player.name) : 'Unknown Player';
+                     summaryItems.push(`<span>${playerName}: ${pluralize(count, 'win')}</span>`);
+                });
+
+                if (summaryItems.length > 0) {
+                    todaysSummaryDiv.innerHTML = `<strong>Summary:</strong> ${summaryItems.join(' ')}`;
+                    todaysSummaryDiv.classList.remove('hidden');
+                }
+                // --- End Summary Calculation ---
+
+                // --- Render Individual Wins ---
+                todaysWins.forEach(w => {
+                    const player = players.find(pl => pl.id === w.playerId);
+                    const playerName = player ? sanitizeHTML(player.name) : 'Unknown Player';
+                    const li = document.createElement('li');
+                    li.dataset.winId = w.id;
+                    // Note: Today's list uses a different structure than score tracking
+                    li.innerHTML = `
+                        <span class="player-name">${playerName}</span>
+                        <span class="win-timestamp">${formatTime(w.timestamp)}</span>
+                        <button class="delete-win-btn icon-button danger" aria-label="Delete this win">🗑️</button>
+                    `;
+                    todaysWinsListUl.appendChild(li);
+                });
+            }
+        };
+
 
         const renderDashboard = () => {
             console.log(`renderDashboard - View: ${currentView}, Period: ${currentDashboardPeriod}, Date: ${currentDisplayDate.toDateString()}`);
@@ -469,90 +610,16 @@
         const updateTimerFill = () => { const percentage = (timerRemainingSeconds / TIMER_DURATION_SECONDS) * 100; timerFill.style.height = `${percentage}%`; };
         const playBeepSound = () => { timerAudio.currentTime = 0; timerAudio.play().catch(error => { console.warn("Timer audio playback failed:", error); }); };
         const stopTimerInterval = () => { if (timerInterval) { clearInterval(timerInterval); timerInterval = null; } };
-        const startTimerInterval = () => {
-            stopTimerInterval(); // Ensure any existing interval is cleared
-            timerInterval = setInterval(() => {
-                timerRemainingSeconds--;
-                if (timerRemainingSeconds < 0) {
-                    playBeepSound(); // Play sound when timer naturally hits zero
-                    timerRemainingSeconds = TIMER_DURATION_SECONDS; // Reset for next cycle
-                }
-                updateTimerDisplay();
-                updateTimerFill();
-            }, 1000);
-        };
-                // --- NEW: Handler for the NEXT button ---
-                const handleNextTimerClick = () => {
-            console.log("Next Timer button clicked");
-            timerRemainingSeconds = TIMER_DURATION_SECONDS; // Reset time to 1:00
-            updateTimerDisplay(); // Update visual time immediately
-            updateTimerFill();    // Update visual fill immediately
-            playBeepSound();      // Play sound immediately on click
-            // Restart the interval timer to ensure it starts counting down from the new value
-            startTimerInterval();
-        };
+        const startTimerInterval = () => { stopTimerInterval(); timerInterval = setInterval(() => { timerRemainingSeconds--; if (timerRemainingSeconds < 0) { playBeepSound(); timerRemainingSeconds = TIMER_DURATION_SECONDS; } updateTimerDisplay(); updateTimerFill(); }, 1000); };
+        const handleNextTimerClick = () => { console.log("Next Timer button clicked"); timerRemainingSeconds = TIMER_DURATION_SECONDS; updateTimerDisplay(); updateTimerFill(); playBeepSound(); startTimerInterval(); };
 
         // --- Wake Lock Functions ---
-        const requestWakeLock = async () => {
-            if ('wakeLock' in navigator) {
-                try {
-                    wakeLockSentinel = await navigator.wakeLock.request('screen');
-                    console.log('Screen Wake Lock requested successfully.');
-                    wakeLockSentinel.addEventListener('release', () => {
-                        console.log('Screen Wake Lock was released');
-                        // Check if the timer should still be visible when lock is auto-released
-                        if (isTimerVisible) {
-                            console.warn('Wake Lock released unexpectedly while timer visible.');
-                            // Optional: You could try re-requesting immediately, but it might fail if the reason for release persists (e.g., tab hidden)
-                        }
-                        wakeLockSentinel = null;
-                    });
-                } catch (err) {
-                    console.error(`Wake Lock Request Failed: ${err.name}, ${err.message}`);
-                    wakeLockSentinel = null;
-                }
-            } else {
-                console.warn('Screen Wake Lock API not supported.');
-            }
-        };
-
-        const releaseWakeLock = async () => {
-            if (wakeLockSentinel !== null && typeof wakeLockSentinel.release === 'function') {
-                try {
-                    await wakeLockSentinel.release();
-                    wakeLockSentinel = null;
-                    console.log('Screen Wake Lock released.');
-                } catch (err) {
-                    console.error(`Failed to release Wake Lock: ${err.name}, ${err.message}`);
-                    // wakeLockSentinel might still be assigned even if release failed,
-                    // but setting it null is generally safe as we check before use.
-                    wakeLockSentinel = null;
-                }
-            }
-        };
+        const requestWakeLock = async () => { if ('wakeLock' in navigator) { try { wakeLockSentinel = await navigator.wakeLock.request('screen'); console.log('Screen Wake Lock requested successfully.'); wakeLockSentinel.addEventListener('release', () => { console.log('Screen Wake Lock was released'); if (isTimerVisible) { console.warn('Wake Lock released unexpectedly while timer visible.'); } wakeLockSentinel = null; }); } catch (err) { console.error(`Wake Lock Request Failed: ${err.name}, ${err.message}`); wakeLockSentinel = null; } } else { console.warn('Screen Wake Lock API not supported.'); } };
+        const releaseWakeLock = async () => { if (wakeLockSentinel !== null && typeof wakeLockSentinel.release === 'function') { try { await wakeLockSentinel.release(); wakeLockSentinel = null; console.log('Screen Wake Lock released.'); } catch (err) { console.error(`Failed to release Wake Lock: ${err.name}, ${err.message}`); wakeLockSentinel = null; } } };
 
         // --- Timer Show/Hide (Modified for Wake Lock) ---
-        const showTimer = async () => { // Made async
-            if (isTimerVisible) return;
-            isTimerVisible = true;
-            timerOverlay.style.display = 'flex';
-            toggleTimerBtn.textContent = '⏱️ Hide Timer';
-            toggleTimerBtn.setAttribute('aria-label', 'Hide Timer');
-            await requestWakeLock(); // Request wake lock
-            timerRemainingSeconds = TIMER_DURATION_SECONDS;
-            updateTimerDisplay(); updateTimerFill(); startTimerInterval();
-        };
-
-        const hideTimer = async () => { // Made async
-            if (!isTimerVisible) return;
-            isTimerVisible = false;
-            timerOverlay.style.display = 'none';
-            toggleTimerBtn.textContent = '⏱️ Timer';
-            toggleTimerBtn.setAttribute('aria-label', 'Show Timer');
-            await releaseWakeLock(); // Release wake lock
-            stopTimerInterval(); timerAudio.pause(); timerAudio.currentTime = 0;
-            timerFill.style.height = '100%'; timerDisplay.textContent = formatTimerTime(TIMER_DURATION_SECONDS);
-        };
+        const showTimer = async () => { if (isTimerVisible) return; isTimerVisible = true; timerOverlay.style.display = 'flex'; toggleTimerBtn.textContent = '⏱️ Hide Timer'; toggleTimerBtn.setAttribute('aria-label', 'Hide Timer'); await requestWakeLock(); timerRemainingSeconds = TIMER_DURATION_SECONDS; updateTimerDisplay(); updateTimerFill(); startTimerInterval(); };
+        const hideTimer = async () => { if (!isTimerVisible) return; isTimerVisible = false; timerOverlay.style.display = 'none'; toggleTimerBtn.textContent = '⏱️ Timer'; toggleTimerBtn.setAttribute('aria-label', 'Show Timer'); await releaseWakeLock(); stopTimerInterval(); timerAudio.pause(); timerAudio.currentTime = 0; timerFill.style.height = '100%'; timerDisplay.textContent = formatTimerTime(TIMER_DURATION_SECONDS); };
 
 
         // --- Event Listeners ---
@@ -565,8 +632,17 @@
         playerListManagementUl.addEventListener('keypress', (e) => { if (e.key === 'Enter' && e.target.classList.contains('rename-input')) { e.preventDefault(); const pE = e.target.closest('.player-management-entry'); if (pE) renamePlayer(pE.dataset.playerId, e.target.value); } });
 
         // Score Tracking / Today's Wins Listeners
-        scoreTrackingListUl.addEventListener('click', (e) => { if (e.target.classList.contains('add-win-btn')) { recordWin(e.target.dataset.playerId); } });
-        todaysWinsListUl.addEventListener('click', (e) => { if (e.target.classList.contains('delete-win-btn')) { const wL = e.target.closest('li'); if (wL?.dataset.winId) deleteWin(wL.dataset.winId); } });
+        scoreTrackingListUl.addEventListener('click', (e) => {
+             if (e.target.classList.contains('add-win-btn') && !e.target.disabled) {
+                 recordWin(e.target.dataset.playerId);
+             }
+         });
+        todaysWinsListUl.addEventListener('click', (e) => {
+            if (e.target.classList.contains('delete-win-btn') && !e.target.disabled) {
+                const wL = e.target.closest('li');
+                if (wL?.dataset.winId) deleteWin(wL.dataset.winId);
+            }
+        });
 
         // Dashboard Controls Listener
         dashboardControls.addEventListener('click', (e) => {
@@ -582,59 +658,31 @@
         });
 
         // View Toggle Button Listeners
-        playerViewBtn.addEventListener('click', () => {
-             console.log("Player View Button Clicked");
-             if (currentView !== 'player') { currentView = 'player'; renderDashboard(); }
-         });
-        monthlyViewBtn.addEventListener('click', () => {
-            console.log("Monthly View Button Clicked");
-             if (currentView !== 'monthly') { currentView = 'monthly'; renderDashboard(); }
-         });
+        playerViewBtn.addEventListener('click', () => { console.log("Player View Button Clicked"); if (currentView !== 'player') { currentView = 'player'; renderDashboard(); } });
+        monthlyViewBtn.addEventListener('click', () => { console.log("Monthly View Button Clicked"); if (currentView !== 'monthly') { currentView = 'monthly'; renderDashboard(); } });
 
         // Period Navigation Button Listeners
-        prevPeriodBtn.addEventListener('click', () => {
-            const oldDate = new Date(currentDisplayDate);
-            if (currentDashboardPeriod === 'week') { currentDisplayDate.setDate(currentDisplayDate.getDate() - 7); }
-            else if (currentDashboardPeriod === 'month') { currentDisplayDate.setMonth(currentDisplayDate.getMonth() - 1); }
-            else if (currentDashboardPeriod === 'year') { currentDisplayDate.setFullYear(currentDisplayDate.getFullYear() - 1); }
-            console.log(`Prev Period Clicked. Old: ${oldDate.toDateString()}, New: ${currentDisplayDate.toDateString()}`);
-            renderDashboard();
-        });
-        nextPeriodBtn.addEventListener('click', () => {
-            const oldDate = new Date(currentDisplayDate);
-            if (currentDashboardPeriod === 'week') { currentDisplayDate.setDate(currentDisplayDate.getDate() + 7); }
-            else if (currentDashboardPeriod === 'month') { const tempDate = new Date(currentDisplayDate); tempDate.setMonth(tempDate.getMonth() + 1); const today = new Date(); if (tempDate.getFullYear() < today.getFullYear() || (tempDate.getFullYear() === today.getFullYear() && tempDate.getMonth() <= today.getMonth())) { currentDisplayDate.setMonth(currentDisplayDate.getMonth() + 1); } else { console.log("Next month navigation blocked."); nextPeriodBtn.disabled = true; return; } }
-            else if (currentDashboardPeriod === 'year') { const nextYear = currentDisplayDate.getFullYear() + 1; if (nextYear <= new Date().getFullYear()) { currentDisplayDate.setFullYear(nextYear); } else { console.log("Next year navigation blocked."); nextPeriodBtn.disabled = true; return; } }
-            console.log(`Next Period Clicked. Old: ${oldDate.toDateString()}, New: ${currentDisplayDate.toDateString()}`);
-            renderDashboard();
-        });
+        prevPeriodBtn.addEventListener('click', () => { const oldDate = new Date(currentDisplayDate); if (currentDashboardPeriod === 'week') { currentDisplayDate.setDate(currentDisplayDate.getDate() - 7); } else if (currentDashboardPeriod === 'month') { currentDisplayDate.setMonth(currentDisplayDate.getMonth() - 1); } else if (currentDashboardPeriod === 'year') { currentDisplayDate.setFullYear(currentDisplayDate.getFullYear() - 1); } console.log(`Prev Period Clicked. Old: ${oldDate.toDateString()}, New: ${currentDisplayDate.toDateString()}`); renderDashboard(); });
+        nextPeriodBtn.addEventListener('click', () => { const oldDate = new Date(currentDisplayDate); if (currentDashboardPeriod === 'week') { currentDisplayDate.setDate(currentDisplayDate.getDate() + 7); } else if (currentDashboardPeriod === 'month') { const tempDate = new Date(currentDisplayDate); tempDate.setMonth(tempDate.getMonth() + 1); const today = new Date(); if (tempDate.getFullYear() < today.getFullYear() || (tempDate.getFullYear() === today.getFullYear() && tempDate.getMonth() <= today.getMonth())) { currentDisplayDate.setMonth(currentDisplayDate.getMonth() + 1); } else { console.log("Next month navigation blocked."); nextPeriodBtn.disabled = true; return; } } else if (currentDashboardPeriod === 'year') { const nextYear = currentDisplayDate.getFullYear() + 1; if (nextYear <= new Date().getFullYear()) { currentDisplayDate.setFullYear(nextYear); } else { console.log("Next year navigation blocked."); nextPeriodBtn.disabled = true; return; } } console.log(`Next Period Clicked. Old: ${oldDate.toDateString()}, New: ${currentDisplayDate.toDateString()}`); renderDashboard(); });
         prevYearBtn.addEventListener('click', () => { const oldDate = new Date(currentDisplayDate); currentDisplayDate.setFullYear(currentDisplayDate.getFullYear() - 1); console.log(`Prev Year Clicked. Old: ${oldDate.toDateString()}, New: ${currentDisplayDate.toDateString()}`); renderDashboard(); });
         nextYearBtn.addEventListener('click', () => { const oldDate = new Date(currentDisplayDate); const nextYear = currentDisplayDate.getFullYear() + 1; if (nextYear <= new Date().getFullYear()) { currentDisplayDate.setFullYear(nextYear); console.log(`Next Year Clicked. Old: ${oldDate.toDateString()}, New: ${currentDisplayDate.toDateString()}`); renderDashboard(); } else { console.log("Next year navigation blocked."); nextYearBtn.disabled = true; } });
 
         // Timer Event Listeners
-        toggleTimerBtn.addEventListener('click', () => { if (isTimerVisible) { hideTimer(); } else { showTimer(); } }); // show/hide are now async but don't need await here
-        hideTimerBtn.addEventListener('click', hideTimer); // hideTimer is now async but doesn't need await here
+        toggleTimerBtn.addEventListener('click', () => { if (isTimerVisible) { hideTimer(); } else { showTimer(); } });
+        hideTimerBtn.addEventListener('click', hideTimer);
         nextTimerBtn.addEventListener('click', handleNextTimerClick);
 
         // Visibility Change Listener for Wake Lock
-         document.addEventListener('visibilitychange', async () => {
-            // Re-request wake lock if page becomes visible, timer is active, and lock was released
-            if (document.visibilityState === 'visible' && isTimerVisible && !wakeLockSentinel) {
-                console.log("Page visible, re-requesting wake lock for active timer.");
-                await requestWakeLock();
-            }
-         });
-
+         document.addEventListener('visibilitychange', async () => { if (document.visibilityState === 'visible' && isTimerVisible && !wakeLockSentinel) { console.log("Page visible, re-requesting wake lock for active timer."); await requestWakeLock(); } });
 
         // --- Initial Load ---
         (async () => {
-            if (typeof ChartDataLabels !== 'undefined') { Chart.register(ChartDataLabels); }
-            else { console.error("ChartDataLabels plugin not loaded!"); }
+            if (typeof ChartDataLabels !== 'undefined') { Chart.register(ChartDataLabels); } else { console.error("ChartDataLabels plugin not loaded!"); }
             currentView = 'player';
-            currentDashboardPeriod = 'month';
+            currentDashboardPeriod = 'month'; // Default to month
             currentDisplayDate = new Date();
             updateTimerDisplay();
-            await loadData();
+            await loadData(); // Load data and trigger initial renderApp()
         })();
 
     </script>
