@@ -110,21 +110,24 @@
             top: 0;
             left: 0;
             width: 100vw;
-            height: 100vh;
+            /* height: 100vh; */ /* <--- Previous value */
+            height: 100dvh; /* <--- Use dynamic viewport height */
             background-color: #f0f0f0; /* Fallback background */
             z-index: 1000; /* Ensure it's on top */
             display: none; /* Hidden by default */
             flex-direction: column;
             justify-content: center; /* Center content vertically */
             align-items: center; /* Center content horizontally */
-            overflow: hidden; /* Prevent scrollbars */
+            overflow: hidden; /* Crucial to prevent scrolling within the overlay */
+            box-sizing: border-box; /* Good practice: include padding/border in size */
         }
+
         #timerFill {
             position: absolute;
             bottom: 0; /* Start fill from the bottom */
             left: 0;
-            width: 100%;
-            height: 100%; /* Start fully green */
+            width: 100%; /* Fill the width of the overlay */
+            height: 100%; /* Start fully green - relative to overlay height */
             background-color: #4CAF50; /* Green background */
             transition: height 0.1s linear; /* Smooth height transition */
             z-index: 1; /* Behind text and button */
