@@ -149,21 +149,24 @@
 
                 /* Add CSS for the NEXT button */
                 #nextTimerBtn {
-            position: absolute;
-            bottom: 20px;
-            right: 20px;
-            padding: 12px 24px;
-            font-size: 1.2rem;
+            /* position: absolute; */ /* REMOVED */
+            /* bottom: 20px; */    /* REMOVED */
+            /* right: 20px; */     /* REMOVED */
+            margin-top: 25px;     /* ADDED - Space below timer text */
+            padding: 18px 40px;   /* INCREASED - Make button bigger */
+            font-size: 1.8rem;    /* INCREASED - Make text bigger */
+            min-width: 150px;     /* ADDED - Ensure a minimum width */
             font-weight: bold;
-            background-color: rgba(255, 255, 255, 0.7); /* Style similar to hide */
+            background-color: rgba(255, 255, 255, 0.7);
             color: #333;
             border: 1px solid #ccc;
-            border-radius: 5px;
+            border-radius: 8px;   /* Slightly larger radius? */
             cursor: pointer;
-            z-index: 2; /* Above the fill */
+            z-index: 2; /* Keep above the fill */
+            transition: background-color 0.2s ease; /* Add smooth hover */
         }
         #nextTimerBtn:hover {
-             background-color: rgba(255, 255, 255, 0.9);
+             background-color: rgba(255, 255, 255, 0.95); /* Slightly more opaque on hover */
         }
 
     </style>
@@ -174,9 +177,9 @@
     <div id="timerOverlay">
         <div id="timerFill"></div>
         <div id="timerDisplay">1:00</div>
-        <button id="hideTimerBtn" aria-label="Hide Timer">Hide Timer</button>
-        <!-- Add this button -->
         <button id="nextTimerBtn" aria-label="Next Turn Timer">NEXT</button>
+        <button id="hideTimerBtn" aria-label="Hide Timer">Hide Timer</button>
+        
     </div>
     <!-- Audio Element for Timer -->
     <audio id="timerAudio" src="https://www.dropbox.com/scl/fi/3h6ax7x9tqxm4ghq6w7oh/beep-125033.mp3?rlkey=isiq9pp7ojw2bbptixsintda1&st=qvnl6u95&dl=1" preload="auto"></audio>
