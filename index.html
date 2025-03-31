@@ -4,6 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Rummikub Win Tracker</title>
+    <!-- Include Chart.js Library -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         /* --- Basic Reset & Defaults --- */
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -51,21 +53,41 @@
         .dashboard-view-toggle { text-align: center; margin-bottom: 15px; }
         .chart-title-container { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
         .chart-title-container h3 { margin-bottom: 0; text-align: center; flex-grow: 1; color: #333; font-weight: bold; }
-        #winChartContainer, #monthlyChartContainer { background-color: #f8f9fa; padding: 20px 10px 10px 10px; border-radius: 5px; min-height: 250px; position: relative; }
+
+        /* --- Chart Containers (Using Chart.js) --- */
+        #winChartContainer, #monthlyChartContainer {
+            background-color: #f8f9fa;
+            padding: 20px 10px 10px 10px;
+            border-radius: 5px;
+            min-height: 300px; /* Give canvas space */
+            position: relative; /* Important for Chart.js responsiveness */
+        }
+        /* The divs holding the canvas */
+        #chart, #monthlyChart {
+             position: relative; /* Chart.js needs relative or absolute parent */
+             height: 250px; /* Example height, Chart.js will adapt */
+             width: 100%;
+        }
+        /* Hide canvas when there's no data */
+        canvas.hidden {
+            display: none;
+        }
+
+        /* --- OBSOLETE CSS Bar Styles (Can be removed) ---
         .chart { display: flex; justify-content: space-around; align-items: flex-end; height: 180px; border-bottom: 2px solid #ccc; padding-bottom: 5px; position: relative; margin-top: 10px; }
         .bar-container { display: flex; flex-direction: column; align-items: center; text-align: center; width: 15%; position: relative; }
-        /* Adjust monthly bar width for 12 bars */
         #monthlyChartContainer .bar-container { width: calc(100% / 12 - 4px); margin: 0 2px; }
         .bar { width: 80%; background-color: #219ebc; border-radius: 3px 3px 0 0; transition: height 0.3s ease-out; position: relative; }
         .bar-label { font-size: 0.8em; margin-top: 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
-        .bar-count { position: absolute; top: -20px; left: 50%; transform: translateX(-50%); font-size: 0.9em; font-weight: bold; color: #333; width: 100%; /* Allow wrapping */ white-space: normal; line-height: 1; }
-        /* Specific style for winner names in monthly chart */
+        .bar-count { position: absolute; top: -20px; left: 50%; transform: translateX(-50%); font-size: 0.9em; font-weight: bold; color: #333; width: 100%; white-space: normal; line-height: 1; }
         #monthlyChartContainer .bar-count { font-size: 0.8em; font-weight: normal; }
+        ---------------------------------------------------- */
+
         /* --- Utility Classes --- */
         .hidden { display: none !important; }
         .text-center { text-align: center; }
         .error-message { color: #d95a3a; font-size: 0.9em; margin-top: -5px; margin-bottom: 10px; }
-        .no-data { color: #6c757d; text-align: center; padding: 20px; font-style: italic; }
+        .no-data { color: #6c757d; text-align: center; padding: 20px; font-style: italic; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 90%; } /* Centered message */
         /* --- List Styling --- */
         ul { list-style: none; padding: 0; }
     </style>
@@ -110,7 +132,10 @@
                      <h3 id="winChartTitle">Wins This Week</h3>
                      <button id="nextPeriodBtn" class="secondary small-nav-button hidden" aria-label="Next Period">Next ➡️</button>
                  </div>
-                 <div id="chart" class="chart"></div>
+                 <!-- Canvas replaces the old chart div content -->
+                 <div id="chart">
+                     <canvas id="playerWinCanvas"></canvas>
+                 </div>
                  <p id="noChartData" class="no-data hidden">No wins recorded for this period.</p>
             </div>
 
@@ -121,7 +146,10 @@
                      <h3 id="monthlyChartTitle">Monthly Wins for 2023</h3>
                      <button id="nextYearBtn" class="secondary small-nav-button" aria-label="Next Year">Next Yr ➡️</button>
                  </div>
-                 <div id="monthlyChart" class="chart"></div>
+                  <!-- Canvas replaces the old chart div content -->
+                 <div id="monthlyChart">
+                      <canvas id="monthlyWinsCanvas"></canvas>
+                 </div>
                  <p id="noMonthlyChartData" class="no-data hidden">No wins recorded for this year.</p>
             </div>
         </section>
@@ -142,7 +170,7 @@
 
         <!-- Firebase Config Placeholder -->
         <div id="firebaseConfigWarning" style="padding: 10px; margin-top: 20px; background-color: #fff3cd; border: 1px solid #ffeeba; border-radius: 5px; font-size: 0.9em;">
-            <strong>Firebase Setup:</strong> Ensure the `firebaseConfig` in the JavaScript below is correct for your project and that you have enabled Firestore in the Firebase console with appropriate security rules. The mock implementation has been disabled.
+            <strong>Firebase Setup:</strong> Ensure the `firebaseConfig` in the JavaScript below is correct...
         </div>
         <div id="firebaseError" style="display: none; padding: 10px; margin-top: 10px; background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; border-radius: 5px; font-size: 0.9em;">
              <strong>Firebase Error:</strong> <span id="firebaseErrorMessage"></span>
@@ -153,12 +181,11 @@
     <script type="module"> // Use type="module" for Firebase v9+ modular SDK
 
         // --- Firebase SDK Imports ---
-        // Make sure the paths are correct for your project setup or use CDN URLs if not using a bundler
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-app.js"; // Use a specific recent version
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-app.js";
         import { getFirestore, collection, getDocs, addDoc, deleteDoc, updateDoc, doc, query, where, orderBy, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-firestore.js";
 
         // --- Firebase Configuration (Replace with your actual config!) ---
-const firebaseConfig = {
+        const firebaseConfig = {
   apiKey: "AIzaSyD-e3H5CaoQobBqFwzDnCGZCUbniZQg_J0",
   authDomain: "i-am-awesome-tasker.firebaseapp.com",
   projectId: "i-am-awesome-tasker",
@@ -174,42 +201,26 @@ const firebaseConfig = {
             app = initializeApp(firebaseConfig);
             db = getFirestore(app);
             console.log("Firebase Initialized Successfully");
-            document.getElementById('firebaseConfigWarning').style.display = 'none'; // Hide warning if init succeeds
+            document.getElementById('firebaseConfigWarning').style.display = 'none';
         } catch (error) {
             console.error("Firebase Initialization Error:", error);
             const errorDiv = document.getElementById('firebaseError');
             document.getElementById('firebaseErrorMessage').textContent = `Could not initialize Firebase. Check your configuration and console. Error: ${error.message}`;
             errorDiv.style.display = 'block';
-            document.getElementById('firebaseConfigWarning').style.backgroundColor = '#f8d7da'; // Make warning red
-            // Disable DB-dependent buttons if needed
+            document.getElementById('firebaseConfigWarning').style.backgroundColor = '#f8d7da';
             document.querySelectorAll('button').forEach(btn => {
                 if(btn.id !== 'togglePlayerManagement') btn.disabled = true;
             });
         }
 
-       // --- Mock Firestore objects/functions (REMOVED/COMMENTED OUT - NO LONGER NEEDED) ---
-       /*
-        const mockDb = { ... };
-        const collection = (db, name) => ({ ... });
-        const doc = (dbOrColl, ...pathSegments) => ({ ... });
-        const Timestamp = { ... };
-        const serverTimestamp = () => Timestamp.now();
-        const query = (collRef, ...constraints) => { ... };
-        const getDocs = async (queryOrRef) => { ... };
-        const addDoc = async (collRef, data) => { ... };
-        const updateDoc = async (docRef, data) => { ... };
-        const deleteDoc = async (docRef) => { ... };
-        const where = (field, op, value) => ({ ... });
-        const db = mockDb; // Use mock DB for demo
-       */
-
-
         // --- Global State ---
-        let players = []; // Array of { id: string, name: string }
-        let wins = [];    // Array of { id: string, playerId: string, timestamp: Firebase Timestamp }
-        let currentDashboardPeriod = 'week'; // 'week', 'month', 'year'
-        let currentDisplayDate = new Date(); // The date determining the *center* of the displayed period
-        let currentView = 'player'; // 'player' or 'monthly'
+        let players = [];
+        let wins = [];
+        let currentDashboardPeriod = 'week';
+        let currentDisplayDate = new Date();
+        let currentView = 'player';
+        let playerWinChartInstance = null; // To hold the Chart.js instance for player wins
+        let monthlyChartInstance = null;   // To hold the Chart.js instance for monthly wins
 
         // --- DOM Elements ---
         const togglePlayerManagementBtn = document.getElementById('togglePlayerManagement');
@@ -224,13 +235,15 @@ const firebaseConfig = {
         const monthlyViewBtn = document.getElementById('monthlyViewBtn');
         const winChartContainer = document.getElementById('winChartContainer');
         const winChartTitle = document.getElementById('winChartTitle');
-        const chartDiv = document.getElementById('chart');
+        const chartDiv = document.getElementById('chart'); // Div containing the player canvas
+        const playerWinCanvas = document.getElementById('playerWinCanvas'); // Player wins canvas
         const noChartDataMsg = document.getElementById('noChartData');
         const prevPeriodBtn = document.getElementById('prevPeriodBtn');
         const nextPeriodBtn = document.getElementById('nextPeriodBtn');
         const monthlyChartContainer = document.getElementById('monthlyChartContainer');
         const monthlyChartTitle = document.getElementById('monthlyChartTitle');
-        const monthlyChartDiv = document.getElementById('monthlyChart');
+        const monthlyChartDiv = document.getElementById('monthlyChart'); // Div containing the monthly canvas
+        const monthlyWinsCanvas = document.getElementById('monthlyWinsCanvas'); // Monthly wins canvas
         const noMonthlyChartDataMsg = document.getElementById('noMonthlyChartData');
         const prevYearBtn = document.getElementById('prevYearBtn');
         const nextYearBtn = document.getElementById('nextYearBtn');
@@ -241,26 +254,22 @@ const firebaseConfig = {
         const noWinsTodayMsg = document.getElementById('noWinsToday');
 
         // --- Utility Functions ---
-        // const generateId = () => `id_${Date.now().toString(36)}${Math.random().toString(36).substring(2, 5)}`; // No longer needed for IDs
         const getTodayDateString = () => new Date().toDateString();
-        const formatTime = (timestamp) => {
-            if (!timestamp) return '';
-            // Handle both Firestore Timestamp and JS Date (after conversion)
-            const date = timestamp.toDate ? timestamp.toDate() : (timestamp instanceof Date ? timestamp : null);
-            if (!date) return '';
-            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const formatTime = (timestamp) => { /* ... same ... */
+             if (!timestamp) return '';
+             const date = timestamp.toDate ? timestamp.toDate() : (timestamp instanceof Date ? timestamp : null);
+             if (!date) return '';
+             return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         };
         const getMonthName = (monthIndex) => ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][monthIndex];
         const getFullMonthName = (monthIndex) => ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][monthIndex];
-
-        const getPeriodRange = (period, baseDate = new Date()) => {
+        const getPeriodRange = (period, baseDate = new Date()) => { /* ... same ... */
             let start = new Date(baseDate);
             let end = new Date(baseDate);
-
             switch (period) {
                 case 'week':
-                    const dayOfWeek = start.getDay();
-                    const diff = start.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1);
+                    const dayOfWeek = start.getDay(); // 0 = Sun, 1 = Mon, ...
+                    const diff = start.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); // Adjust to Monday
                     start = new Date(start.setDate(diff));
                     start.setHours(0, 0, 0, 0);
                     end = new Date(start);
@@ -270,352 +279,173 @@ const firebaseConfig = {
                 case 'month':
                     start = new Date(start.getFullYear(), start.getMonth(), 1);
                     start.setHours(0, 0, 0, 0);
-                    end = new Date(start.getFullYear(), start.getMonth() + 1, 0);
+                    end = new Date(start.getFullYear(), start.getMonth() + 1, 0); // Last day of month
                     end.setHours(23, 59, 59, 999);
                     break;
                 case 'year':
-                    start = new Date(start.getFullYear(), 0, 1);
+                    start = new Date(start.getFullYear(), 0, 1); // Jan 1st
                     start.setHours(0, 0, 0, 0);
-                    end = new Date(start.getFullYear(), 11, 31);
+                    end = new Date(start.getFullYear(), 11, 31); // Dec 31st
                     end.setHours(23, 59, 59, 999);
                     break;
             }
             return { start, end };
         };
+        const sanitizeHTML = (str) => { // Basic sanitizer
+             const temp = document.createElement('div');
+             temp.textContent = str;
+             return temp.innerHTML;
+        };
 
-        // --- Data Handling Functions (with ACTUAL Firebase Integration) ---
 
-        const loadData = async () => {
-            if (!db) {
-                 console.error("Firestore DB instance is not available. Cannot load data.");
-                 // Optionally show a persistent error message to the user
-                 return;
-            }
-            console.log("Loading data from Firestore...");
+        // --- Data Handling Functions (Firebase) ---
+        // loadData, addPlayer, deletePlayer, renamePlayer, recordWin, deleteWin
+        // getWinsForPeriodLocal, getWinsForYearLocal
+        // --- (These functions remain largely the same as in your previous version) ---
+         const loadData = async () => {
+            if (!db) { console.error("DB not available."); return; }
+            console.log("Loading data...");
             try {
-                // --- Load Players ---
                 const playersCollection = collection(db, "players");
-                const playerQuery = query(playersCollection, orderBy("name")); // Order by name in Firestore
+                const playerQuery = query(playersCollection, orderBy("name"));
                 const playerSnapshot = await getDocs(playerQuery);
                 players = playerSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                // players.sort((a, b) => a.name.localeCompare(b.name)); // Sorting done by Firestore query now
                 console.log("Players loaded:", players.length);
 
-                // --- Load ALL Wins ---
-                // For a large dataset, you should only load wins relevant to the current/default view.
-                // But for simplicity here, load all initially.
                 const winsCollection = collection(db, "wins");
-                // Add orderBy('timestamp', 'desc') if needed, but can be large
-                const winSnapshot = await getDocs(winsCollection);
+                const winSnapshot = await getDocs(winsCollection); // Load all for simplicity
                 wins = winSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-                // Ensure timestamp property exists and is a Firestore Timestamp
-                // (Firestore SDK v9+ generally handles this well)
                 wins = wins.filter(w => w.timestamp && typeof w.timestamp.toDate === 'function');
-
+                wins.sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis()); // Keep sorted
                 console.log("Wins loaded:", wins.length);
 
             } catch (error) {
-                console.error("Error loading data from Firestore:", error);
-                const errorDiv = document.getElementById('firebaseError');
-                document.getElementById('firebaseErrorMessage').textContent = `Failed to load data. Check console/network tab and Firestore Rules. Error: ${error.message}`;
-                errorDiv.style.display = 'block';
-                // Fallback to empty arrays if load fails
-                 players = [];
-                 wins = [];
-            }
-            renderApp(); // Render after loading or on error (to show empty state)
+                 console.error("Error loading data from Firestore:", error);
+                 const errorDiv = document.getElementById('firebaseError');
+                 document.getElementById('firebaseErrorMessage').textContent = `Failed to load data. Error: ${error.message}`;
+                 errorDiv.style.display = 'block';
+                 players = []; wins = [];
+             }
+             renderApp();
         };
 
         const addPlayer = async (name) => {
-            if (!db) { alert("Database connection error."); return; }
+            if (!db) { alert("DB error."); return; }
             const trimmedName = name.trim();
-             if (!trimmedName) { addPlayerError.textContent = "Player name cannot be empty."; return; }
-             if (players.some(p => p.name.toLowerCase() === trimmedName.toLowerCase())) { addPlayerError.textContent = "Player name already exists."; return; }
+            if (!trimmedName) { addPlayerError.textContent = "Name empty."; return; }
+            if (players.some(p => p.name.toLowerCase() === trimmedName.toLowerCase())) { addPlayerError.textContent = "Name exists."; return; }
             addPlayerError.textContent = "";
-
-            const newPlayer = { name: trimmedName };
-            addPlayerBtn.disabled = true; // Prevent double clicks
-
+            addPlayerBtn.disabled = true;
             try {
-                console.log(`Adding player '${newPlayer.name}' to Firestore...`);
-                const playersCollection = collection(db, "players");
-                // addDoc returns a DocumentReference
-                const docRef = await addDoc(playersCollection, newPlayer);
-                console.log("Player added with ID:", docRef.id);
-
-                // Add locally immediately for UI update (using the ID from Firestore)
-                players.push({ id: docRef.id, ...newPlayer });
-                players.sort((a, b) => a.name.localeCompare(b.name)); // Keep sorted locally
+                const docRef = await addDoc(collection(db, "players"), { name: trimmedName });
+                players.push({ id: docRef.id, name: trimmedName });
+                players.sort((a, b) => a.name.localeCompare(b.name));
                 renderApp();
                 newPlayerNameInput.value = '';
-
-            } catch (error) {
-                console.error("Error adding player:", error);
-                addPlayerError.textContent = `Failed to add player: ${error.message}`;
-            } finally {
-                 addPlayerBtn.disabled = false;
-            }
+            } catch (error) { console.error("Error adding player:", error); addPlayerError.textContent = `Failed: ${error.message}`; }
+            finally { addPlayerBtn.disabled = false; }
         };
 
-         const deletePlayer = async (playerId) => {
-             if (!db) { alert("Database connection error."); return; }
-             const player = players.find(p => p.id === playerId);
-             if (!player) return;
-             if (!confirm(`Are you sure you want to delete player "${player.name}"? This will NOT delete their past wins but they will show as 'Unknown'.`)) return;
-
-             // Find the button and disable it
-             const deleteButton = playerListManagementUl.querySelector(`.player-management-entry[data-player-id="${playerId}"] .delete-player-btn`);
-             if (deleteButton) deleteButton.disabled = true;
-
-             try {
-                 console.log(`Deleting player '${player.name}' (ID: ${playerId}) from Firestore...`);
-                 const playerDocRef = doc(db, "players", playerId);
-                 await deleteDoc(playerDocRef);
-                 console.log("Player deleted from Firestore.");
-
-                 // Remove locally
-                 players = players.filter(p => p.id !== playerId);
-
-                 // Re-render (wins associated with this player will now show 'Unknown')
-                 renderApp();
-
-             } catch (error) {
-                 console.error("Error deleting player:", error);
-                 alert(`Failed to delete player "${player.name}". Error: ${error.message}`);
-                 if (deleteButton) deleteButton.disabled = false; // Re-enable button on error
-             }
-         };
-
-         const renamePlayer = async (playerId, newName) => {
-             if (!db) { alert("Database connection error."); return false; }
-             const trimmedName = newName.trim();
-             if (!trimmedName) { alert("Player name cannot be empty."); return false; }
-             if (players.some(p => p.id !== playerId && p.name.toLowerCase() === trimmedName.toLowerCase())) { alert("Another player already has this name."); return false; }
-
-            const playerIndex = players.findIndex(p => p.id === playerId);
-            if (playerIndex === -1) return false;
-            const oldName = players[playerIndex].name;
-
-            // Find controls and disable temporarily
-            const entry = playerListManagementUl.querySelector(`.player-management-entry[data-player-id="${playerId}"]`);
-            const saveBtn = entry?.querySelector('.save-rename-btn');
-            const cancelBtn = entry?.querySelector('.cancel-rename-btn');
-            if(saveBtn) saveBtn.disabled = true;
-            if(cancelBtn) cancelBtn.disabled = true;
-
-
+        const deletePlayer = async (playerId) => {
+            if (!db) { alert("DB error."); return; }
+            const player = players.find(p => p.id === playerId);
+            if (!player || !confirm(`Delete ${player.name}? Wins remain as 'Unknown'.`)) return;
+            const deleteButton = playerListManagementUl.querySelector(`.player-management-entry[data-player-id="${playerId}"] .delete-player-btn`);
+            if (deleteButton) deleteButton.disabled = true;
             try {
-                 console.log(`Renaming player '${oldName}' to '${trimmedName}' (ID: ${playerId}) in Firestore...`);
-                 const playerDocRef = doc(db, "players", playerId);
-                 await updateDoc(playerDocRef, { name: trimmedName });
-                 console.log("Player renamed in Firestore.");
+                await deleteDoc(doc(db, "players", playerId));
+                players = players.filter(p => p.id !== playerId);
+                renderApp();
+            } catch (error) { console.error("Error deleting player:", error); alert(`Failed: ${error.message}`); if (deleteButton) deleteButton.disabled = false; }
+        };
 
-                 // Update locally
+        const renamePlayer = async (playerId, newName) => {
+             if (!db) { alert("DB error."); return false; }
+             const trimmedName = newName.trim();
+             if (!trimmedName) { alert("Name empty."); return false; }
+             if (players.some(p => p.id !== playerId && p.name.toLowerCase() === trimmedName.toLowerCase())) { alert("Name exists."); return false; }
+             const playerIndex = players.findIndex(p => p.id === playerId);
+             if (playerIndex === -1) return false;
+             const oldName = players[playerIndex].name;
+             const entry = playerListManagementUl.querySelector(`.player-management-entry[data-player-id="${playerId}"]`);
+             const saveBtn = entry?.querySelector('.save-rename-btn');
+             const cancelBtn = entry?.querySelector('.cancel-rename-btn');
+             if(saveBtn) saveBtn.disabled = true; if(cancelBtn) cancelBtn.disabled = true;
+             try {
+                 await updateDoc(doc(db, "players", playerId), { name: trimmedName });
                  players[playerIndex].name = trimmedName;
                  players.sort((a, b) => a.name.localeCompare(b.name));
-                 renderApp(); // Re-renders everything, including closing the input form
-                 return true; // Indicate success
-
-            } catch (error) {
-                 console.error("Error renaming player:", error);
-                 alert(`Failed to rename player "${oldName}". Error: ${error.message}`);
-                 if(saveBtn) saveBtn.disabled = false; // Re-enable on error
-                 if(cancelBtn) cancelBtn.disabled = false;
-                 return false; // Indicate failure
-             }
-         };
+                 renderApp(); // Will re-render list and hide input
+                 return true;
+             } catch (error) { console.error("Error renaming:", error); alert(`Failed: ${error.message}`); if(saveBtn) saveBtn.disabled = false; if(cancelBtn) cancelBtn.disabled = false; return false; }
+        };
 
         const recordWin = async (playerId) => {
-            if (!db) { alert("Database connection error."); return; }
-            const player = players.find(p => p.id === playerId);
-            if (!player) return;
-
-            // Disable button temporarily
+            if (!db) { alert("DB error."); return; }
+            const player = players.find(p => p.id === playerId); if (!player) return;
             const winButton = scoreTrackingListUl.querySelector(`button.add-win-btn[data-player-id="${playerId}"]`);
             if(winButton) winButton.disabled = true;
-
-            const newWinData = {
-                playerId: playerId,
-                timestamp: serverTimestamp() // Use Firestore server timestamp for accuracy
-            };
-
             try {
-                console.log(`Recording win for player '${player.name}' (PlayerID: ${playerId}) in Firestore...`);
-                const winsCollection = collection(db, "wins");
-                const docRef = await addDoc(winsCollection, newWinData);
-                console.log("Win recorded with ID:", docRef.id);
-
-                // Add locally *only after successful save*?
-                // This causes a slight delay but ensures data consistency.
-                // Alternatively, add optimistically and remove on error.
-                // For this app, let's wait for the save, then fetch LATEST wins or add manually.
-                // Simpler approach for now: add locally with a client timestamp for immediate feedback,
-                // knowing the server one is the 'true' one. Dashboard will use server timestamps eventually.
-
-                 const winToAddLocally = {
-                     id: docRef.id, // Use the returned ID
-                     playerId: playerId,
-                     // Use client-side timestamp for immediate UI update.
-                     // The dashboard will re-query Firestore anyway or use the full 'wins' list
-                     // which should ideally be refreshed periodically or via listeners.
-                     timestamp: Timestamp.now() // Firestore client Timestamp
-                 };
-                 wins.push(winToAddLocally);
-                 // Sort wins locally? Maybe by timestamp desc?
-                 wins.sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis());
-
-
-                renderTodaysWinsList(); // Update today's list
-                renderDashboard(); // Update dashboard (will use the local wins array for now)
-
-            } catch (error) {
-                 console.error("Error recording win:", error);
-                 alert(`Failed to record win for ${player.name}. Error: ${error.message}`);
-             } finally {
-                 if(winButton) winButton.disabled = false; // Re-enable button
-             }
+                const docRef = await addDoc(collection(db, "wins"), { playerId: playerId, timestamp: serverTimestamp() });
+                // Add locally for immediate feedback (timestamp will update on next full load)
+                 wins.unshift({ id: docRef.id, playerId: playerId, timestamp: Timestamp.now() }); // Add to start (assuming latest first)
+                // Re-sort just in case, although unshift is usually ok if already sorted desc
+                // wins.sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis());
+                renderTodaysWinsList();
+                renderDashboard();
+            } catch (error) { console.error("Error recording win:", error); alert(`Failed: ${error.message}`); }
+            finally { if(winButton) winButton.disabled = false; }
         };
 
         const deleteWin = async (winId) => {
-            if (!db) { alert("Database connection error."); return; }
-            const winIndex = wins.findIndex(w => w.id === winId);
-            if (winIndex === -1) return;
-
+            if (!db) { alert("DB error."); return; }
+            const winIndex = wins.findIndex(w => w.id === winId); if (winIndex === -1) return;
             const winToDelete = wins[winIndex];
-            // Ensure timestamp exists and has toDate method before proceeding
-            if (!winToDelete.timestamp || typeof winToDelete.timestamp.toDate !== 'function') {
-                console.error("Cannot delete win: Invalid timestamp data.", winToDelete);
-                alert("Cannot delete win due to invalid data.");
-                return;
-            }
-            const winDate = winToDelete.timestamp.toDate();
-            const today = getTodayDateString();
-
-            // Allow deleting any win for simplicity, confirm carefully
-            // if (winDate.toDateString() !== today) {
-            //     alert("You can only delete wins recorded today.");
-            //     return;
-            // }
-            if (!confirm(`Are you sure you want to delete this win for ${players.find(p=>p.id === winToDelete.playerId)?.name ?? 'Unknown'} recorded at ${formatTime(winToDelete.timestamp)}?`)) return;
-
-             // Disable button temporarily
+            if (!winToDelete.timestamp || typeof winToDelete.timestamp.toDate !== 'function') return;
+            if (!confirm(`Delete win for ${players.find(p=>p.id === winToDelete.playerId)?.name ?? 'Unknown'} at ${formatTime(winToDelete.timestamp)}?`)) return;
             const deleteButton = todaysWinsListUl.querySelector(`li[data-win-id="${winId}"] .delete-win-btn`);
             if(deleteButton) deleteButton.disabled = true;
-
-
             try {
-                console.log(`Deleting win (ID: ${winId}) from Firestore...`);
-                const winDocRef = doc(db, "wins", winId);
-                await deleteDoc(winDocRef);
-                console.log("Win deleted from Firestore.");
-
-                // Remove locally
-                wins.splice(winIndex, 1); // Correctly remove using splice
+                await deleteDoc(doc(db, "wins", winId));
+                wins.splice(winIndex, 1);
                 renderTodaysWinsList();
                 renderDashboard();
-
-            } catch (error) {
-                console.error("Error deleting win:", error);
-                alert(`Failed to delete win. Error: ${error.message}`);
-                 if(deleteButton) deleteButton.disabled = false; // Re-enable on error
-            }
+            } catch (error) { console.error("Error deleting win:", error); alert(`Failed: ${error.message}`); if(deleteButton) deleteButton.disabled = false; }
         };
 
-        // Get Wins - Uses the locally cached 'wins' array filtered by date.
-        // For large datasets, this should query Firestore directly each time.
-        // We keep the Firestore query logic commented out as an alternative.
-        const getWinsForPeriodLocal = (period, baseDate = new Date()) => {
+        const getWinsForPeriodLocal = (period, baseDate = new Date()) => { /* ... same ... */
             const { start, end } = getPeriodRange(period, baseDate);
             const startTime = start.getTime();
             const endTime = end.getTime();
-
             return wins.filter(win => {
                 if (!win.timestamp || typeof win.timestamp.toDate !== 'function') return false;
                 const winTime = win.timestamp.toDate().getTime();
                 return winTime >= startTime && winTime <= endTime;
             });
-        }
-         /* // Alternative: Query Firestore directly each time (more scalable but more reads)
-         const getWinsForPeriodFirestore = async (period, baseDate = new Date()) => {
-             if (!db) return []; // No connection
-             const { start, end } = getPeriodRange(period, baseDate);
-
-             const startTimestamp = Timestamp.fromDate(start);
-             const endTimestamp = Timestamp.fromDate(end);
-
-             console.log(`Querying Firestore for wins between ${start.toLocaleDateString()} and ${end.toLocaleDateString()}`);
-             try {
-                 const winsCollection = collection(db, "wins");
-                 const q = query(winsCollection,
-                                 where("timestamp", ">=", startTimestamp),
-                                 where("timestamp", "<=", endTimestamp),
-                                 orderBy("timestamp", "desc")); // Optional ordering
-
-                 const querySnapshot = await getDocs(q);
-                 const periodWins = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                 console.log(`Found ${periodWins.length} wins for the period via Firestore.`);
-                 return periodWins;
-             } catch (error) {
-                 console.error("Error querying wins for period:", error);
-                 return []; // Return empty on error
-             }
-         };
-        */
-
-        // Get Wins for a whole year (using local cache)
-        const getWinsForYearLocal = (year) => {
-             const start = new Date(year, 0, 1);
-             const end = new Date(year, 11, 31, 23, 59, 59, 999);
-             const startTime = start.getTime();
-             const endTime = end.getTime();
-
-             return wins.filter(win => {
-                 if (!win.timestamp || typeof win.timestamp.toDate !== 'function') return false;
-                 const winTime = win.timestamp.toDate().getTime();
-                 return winTime >= startTime && winTime <= endTime;
-             });
-         };
-         /* // Alternative: Query Firestore directly for the year
-         const getWinsForYearFirestore = async (year) => {
-              if (!db) return [];
-              const start = new Date(year, 0, 1);
-              const end = new Date(year, 11, 31, 23, 59, 59, 999);
-
-              const startTimestamp = Timestamp.fromDate(start);
-              const endTimestamp = Timestamp.fromDate(end);
-
-              console.log(`Querying Firestore for wins for year ${year}`);
-              try {
-                  const winsCollection = collection(db, "wins");
-                  const q = query(winsCollection,
-                                  where("timestamp", ">=", startTimestamp),
-                                  where("timestamp", "<=", endTimestamp));
-
-                  const querySnapshot = await getDocs(q);
-                  const yearWins = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                  console.log(`Found ${yearWins.length} wins for ${year} via Firestore.`);
-                  return yearWins;
-              } catch (error) {
-                  console.error(`Error querying wins for year ${year}:`, error);
-                  return [];
-              }
-         };
-        */
+        };
+        const getWinsForYearLocal = (year) => { /* ... same ... */
+            const start = new Date(year, 0, 1);
+            const end = new Date(year, 11, 31, 23, 59, 59, 999);
+            const startTime = start.getTime();
+            const endTime = end.getTime();
+            return wins.filter(win => {
+                if (!win.timestamp || typeof win.timestamp.toDate !== 'function') return false;
+                const winTime = win.timestamp.toDate().getTime();
+                return winTime >= startTime && winTime <= endTime;
+            });
+        };
 
         // --- Rendering Functions ---
 
-        const renderPlayerManagementList = () => {
+        const renderPlayerManagementList = () => { /* ... same as before ... */
              playerListManagementUl.innerHTML = '';
              noPlayersManagedMsg.classList.toggle('hidden', players.length > 0);
              if (players.length === 0) return;
-
              players.forEach(player => {
                  const li = document.createElement('li');
                  li.className = 'player-management-entry';
                  li.dataset.playerId = player.id;
-                 // Sanitize player name for display if needed, though Firestore handles basic strings
-                 const safeName = player.name.replace(/</g, "<").replace(/>/g, ">");
+                 const safeName = sanitizeHTML(player.name);
                  li.innerHTML = `
                      <span class="player-name-display">${safeName}</span>
                      <div class="rename-controls hidden">
@@ -631,43 +461,32 @@ const firebaseConfig = {
                  playerListManagementUl.appendChild(li);
              });
         };
-
-         const renderScoreTrackingList = () => {
+        const renderScoreTrackingList = () => { /* ... same as before ... */
              scoreTrackingListUl.innerHTML = '';
              noPlayersForScoringMsg.classList.toggle('hidden', players.length > 0);
              if (players.length === 0) return;
-
              players.forEach(player => {
                  const li = document.createElement('li');
                  li.dataset.playerId = player.id;
-                 const safeName = player.name.replace(/</g, "<").replace(/>/g, ">");
+                 const safeName = sanitizeHTML(player.name);
                  li.innerHTML = `
                      <span class="player-name">${safeName}</span>
                      <button class="add-win-btn" data-player-id="${player.id}">+ Win</button>
                  `;
                  scoreTrackingListUl.appendChild(li);
              });
-         };
-
-         const renderTodaysWinsList = () => {
+        };
+        const renderTodaysWinsList = () => { /* ... same as before ... */
              todaysWinsListUl.innerHTML = '';
              const today = getTodayDateString();
              todayDateDisplay.textContent = today;
-
-             const todaysWins = wins
-                 .filter(win => {
-                     return win.timestamp && typeof win.timestamp.toDate === 'function' &&
-                            win.timestamp.toDate().toDateString() === today;
-                 })
-                 // No need to sort again if `wins` is kept sorted
-                 // .sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis()); // Newest first using milliseconds
-
+             const todaysWins = wins.filter(win => win.timestamp?.toDate().toDateString() === today);
+             // Assumes `wins` is already sorted newest first
              noWinsTodayMsg.classList.toggle('hidden', todaysWins.length > 0);
              if (todaysWins.length === 0) return;
-
              todaysWins.forEach(win => {
                  const player = players.find(p => p.id === win.playerId);
-                 const playerName = player ? player.name.replace(/</g, "<").replace(/>/g, ">") : 'Unknown Player';
+                 const playerName = player ? sanitizeHTML(player.name) : 'Unknown Player';
                  const li = document.createElement('li');
                  li.dataset.winId = win.id;
                  li.innerHTML = `
@@ -677,20 +496,25 @@ const firebaseConfig = {
                  `;
                  todaysWinsListUl.appendChild(li);
              });
-         };
+        };
 
-         const renderDashboard = () => { // No longer async if using local data
-             console.log("Rendering dashboard for view:", currentView, "Period:", currentDashboardPeriod, "Date:", currentDisplayDate.toLocaleDateString());
-             if (currentView === 'player') {
-                  renderPlayerWinsChart(currentDashboardPeriod, currentDisplayDate); // Not async
-             } else if (currentView === 'monthly') {
-                  renderMonthlyBreakdownChart(currentDisplayDate.getFullYear()); // Not async
-             }
-         };
+        const renderDashboard = () => {
+            console.log("Rendering dashboard for view:", currentView, "Period:", currentDashboardPeriod, "Date:", currentDisplayDate.toLocaleDateString());
+            if (currentView === 'player') {
+                renderPlayerWinsChart(currentDashboardPeriod, currentDisplayDate);
+            } else if (currentView === 'monthly') {
+                renderMonthlyBreakdownChart(currentDisplayDate.getFullYear());
+            }
+        };
 
+        // --- Chart.js Player Wins Chart ---
+        const renderPlayerWinsChart = (period, displayDate) => {
+            // Destroy existing chart instance if it exists
+            if (playerWinChartInstance) {
+                playerWinChartInstance.destroy();
+                playerWinChartInstance = null;
+            }
 
-         const renderPlayerWinsChart = (period, displayDate) => { // Not async
-             let playerData = [];
              dashboardControls.querySelectorAll('button').forEach(btn => {
                  btn.classList.toggle('active', btn.dataset.period === period);
              });
@@ -698,12 +522,12 @@ const firebaseConfig = {
              const { start, end } = getPeriodRange(period, displayDate);
              let titleText = '';
              const today = new Date(); today.setHours(0,0,0,0);
-             const isCurrentPeriod = displayDate.toDateString().startsWith(today.toDateString().substring(0,3))
-                                       && getPeriodRange(period, today).start.toDateString() === start.toDateString();
+             const currentPeriodRangeToday = getPeriodRange(period, today);
+             const isCurrentPeriod = currentPeriodRangeToday.start.getTime() === start.getTime();
 
-             switch(period) { /* ... title logic same as before ... */
+             switch(period) {
                  case 'week': titleText = isCurrentPeriod ? 'Wins This Week' : `Week of ${start.toLocaleDateString()}`; break;
-                 case 'month': const monthName = getFullMonthName(displayDate.getMonth()); titleText = (isCurrentPeriod && displayDate.getFullYear() === today.getFullYear()) ? `Wins This ${monthName}` : `Wins ${monthName} ${displayDate.getFullYear()}`; break;
+                 case 'month': const monthName = getFullMonthName(displayDate.getMonth()); titleText = isCurrentPeriod ? `Wins This ${monthName}` : `Wins ${monthName} ${displayDate.getFullYear()}`; break;
                  case 'year': titleText = isCurrentPeriod ? `Wins This Year (${displayDate.getFullYear()})` : `Wins ${displayDate.getFullYear()}`; break;
              }
              winChartTitle.textContent = titleText;
@@ -712,27 +536,13 @@ const firebaseConfig = {
              const todayEndOfDay = new Date(); todayEndOfDay.setHours(23, 59, 59, 999);
              nextPeriodBtn.disabled = end.getTime() >= todayEndOfDay.getTime();
 
-
-             // Use local filtering function
              const periodWins = getWinsForPeriodLocal(period, displayDate);
-             // const periodWins = await getWinsForPeriodFirestore(period, displayDate); // Alternative
-
-             chartDiv.innerHTML = '';
              const hasPlayers = players.length > 0;
              const hasData = periodWins.length > 0;
 
-             noChartDataMsg.classList.toggle('hidden', hasData || !hasPlayers);
-
-             if (!hasPlayers) {
-                 noChartDataMsg.textContent = "Add players to see statistics.";
-                 noChartDataMsg.classList.remove('hidden'); // Ensure it's shown
-                 return;
-             }
-             if (!hasData) {
-                 noChartDataMsg.textContent = "No wins recorded for this period.";
-                 // Still show players with 0 wins
-                 playerData = players.map(p => ({ name: p.name, count: 0 }));
-             } else {
+             // Prepare data for Chart.js
+             let playerData = [];
+             if (hasPlayers) {
                  const winsByPlayer = players.reduce((acc, player) => {
                      acc[player.id] = { name: player.name, count: 0 };
                      return acc;
@@ -740,142 +550,231 @@ const firebaseConfig = {
                  periodWins.forEach(win => {
                      if (win.playerId && winsByPlayer[win.playerId]) {
                          winsByPlayer[win.playerId].count++;
-                     } // Ignore wins for unknown/deleted players in this chart
+                     }
                  });
                  playerData = Object.values(winsByPlayer);
+                 // Sort for consistent bar order (optional, could sort by count)
+                 playerData.sort((a, b) => a.name.localeCompare(b.name));
              }
 
-             const maxWins = Math.max(1, ...playerData.map(p => p.count));
+            // Handle display of canvas vs. message
+            if (!hasPlayers) {
+                noChartDataMsg.textContent = "Add players to see statistics.";
+                noChartDataMsg.classList.remove('hidden');
+                playerWinCanvas.classList.add('hidden'); // Hide canvas
+                return; // Stop chart rendering
+            } else if (!hasData) {
+                noChartDataMsg.textContent = "No wins recorded for this period.";
+                noChartDataMsg.classList.remove('hidden');
+                // We can still show the chart with 0 bars if needed, or hide it
+                playerWinCanvas.classList.add('hidden'); // Hide canvas if no wins
+                 return; // Optionally stop if you don't want to show 0 bars
+            } else {
+                noChartDataMsg.classList.add('hidden');
+                playerWinCanvas.classList.remove('hidden'); // Show canvas
+            }
 
-             playerData.forEach(player => {
-                 const barHeightPercent = maxWins === 0 ? 0 : (player.count / maxWins) * 100;
-                 const barContainer = document.createElement('div');
-                 barContainer.className = 'bar-container';
-                 const safeName = player.name.replace(/</g, "<").replace(/>/g, ">");
-                 barContainer.innerHTML = `
-                     <div class="bar-count">${player.count}</div>
-                     <div class="bar" style="height: ${barHeightPercent}%;"></div>
-                     <div class="bar-label" title="${safeName}">${safeName}</div>
-                 `;
-                 chartDiv.appendChild(barContainer);
-             });
-         };
 
-        // *** MODIFIED Monthly Breakdown Chart ***
-        const renderMonthlyBreakdownChart = (year) => { // Not async
-             monthlyChartTitle.textContent = `Monthly Winners for ${year}`;
-             nextYearBtn.disabled = year >= new Date().getFullYear();
+            // --- Create Chart.js Chart ---
+            const ctx = playerWinCanvas.getContext('2d');
+            if (!ctx) {
+                console.error("Failed to get canvas context for player wins");
+                return;
+            }
 
-             // Use local filtering
-             const yearWins = getWinsForYearLocal(year);
-             // const yearWins = await getWinsForYearFirestore(year); // Alternative
+            const labels = playerData.map(p => p.name);
+            const dataCounts = playerData.map(p => p.count);
 
-             monthlyChartDiv.innerHTML = ''; // Clear chart
+            playerWinChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Wins',
+                        data: dataCounts,
+                        backgroundColor: '#219ebc',
+                        borderColor: '#1a7f9a',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false, // Allow chart to fill container height better
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                // Ensure integer ticks for win counts
+                                stepSize: 1,
+                                precision: 0 // Explicitly show only integers
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false // Hide legend if only one dataset
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) { label += ': '; }
+                                    if (context.parsed.y !== null) {
+                                        label += context.parsed.y + (context.parsed.y === 1 ? ' win' : ' wins');
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        };
 
-             const hasData = yearWins.length > 0;
-             noMonthlyChartDataMsg.classList.toggle('hidden', hasData);
-             if (!hasData) {
-                  noMonthlyChartDataMsg.textContent = `No wins recorded for ${year}.`;
-                  return;
-             }
 
-             // 1. Aggregate wins per player per month
-             const monthlyPlayerWins = {}; // { monthIndex: { playerId: count, ... }, ... }
-             yearWins.forEach(win => {
-                 if (win.timestamp && typeof win.timestamp.toDate === 'function' && win.playerId) {
-                     const monthIndex = win.timestamp.toDate().getMonth();
-                     if (!monthlyPlayerWins[monthIndex]) {
-                         monthlyPlayerWins[monthIndex] = {};
-                     }
-                     if (!monthlyPlayerWins[monthIndex][win.playerId]) {
-                         monthlyPlayerWins[monthIndex][win.playerId] = 0;
-                     }
-                     monthlyPlayerWins[monthIndex][win.playerId]++;
-                 }
-             });
+        // --- Chart.js Monthly Breakdown Chart ---
+        const renderMonthlyBreakdownChart = (year) => {
+            // Destroy existing chart instance if it exists
+            if (monthlyChartInstance) {
+                monthlyChartInstance.destroy();
+                monthlyChartInstance = null;
+            }
 
-             // 2. Find winner(s) and max score for each month
-             const monthlyResults = []; // Array of { monthIndex, winnerNames: [], winningScore: 0 }
-             let overallMaxWinningScore = 1; // For bar scaling, start at 1
+            monthlyChartTitle.textContent = `Monthly Winners for ${year}`;
+            nextYearBtn.disabled = year >= new Date().getFullYear();
 
-             for (let i = 0; i < 12; i++) {
+            const yearWins = getWinsForYearLocal(year);
+            const hasData = yearWins.length > 0;
+
+            // Calculate monthly results inside the function scope
+            const monthlyPlayerWins = {};
+            yearWins.forEach(win => {
+                if (win.timestamp && typeof win.timestamp.toDate === 'function' && win.playerId) {
+                    const monthIndex = win.timestamp.toDate().getMonth();
+                    monthlyPlayerWins[monthIndex] = monthlyPlayerWins[monthIndex] || {};
+                    monthlyPlayerWins[monthIndex][win.playerId] = (monthlyPlayerWins[monthIndex][win.playerId] || 0) + 1;
+                }
+            });
+
+            const monthlyResults = []; // Array of { monthIndex, winnerNames: [], winningScore: 0 }
+            for (let i = 0; i < 12; i++) {
                  const monthData = monthlyPlayerWins[i];
                  let winners = [];
                  let maxScore = 0;
-
                  if (monthData && Object.keys(monthData).length > 0) {
-                     // Find max score for this month
                      maxScore = Math.max(...Object.values(monthData));
-
-                     // Find all players who achieved this max score
                      winners = Object.entries(monthData)
-                         .filter(([playerId, score]) => score === maxScore)
-                         .map(([playerId, score]) => {
-                             const player = players.find(p => p.id === playerId);
-                             return player ? player.name : 'Unknown'; // Get name
-                         });
-
-                     if (maxScore > overallMaxWinningScore) {
-                         overallMaxWinningScore = maxScore;
-                     }
+                         .filter(([_, score]) => score === maxScore)
+                         .map(([playerId, _]) => players.find(p => p.id === playerId)?.name ?? 'Unknown');
                  }
-                 monthlyResults.push({ monthIndex: i, winnerNames: winners, winningScore: maxScore });
+                 monthlyResults.push({ monthIndex: i, winnerNames: winners.map(sanitizeHTML), winningScore: maxScore });
              }
 
-             // 3. Render bars
-             monthlyResults.forEach(result => {
-                 const barHeightPercent = overallMaxWinningScore === 0 ? 0 : (result.winningScore / overallMaxWinningScore) * 100;
-                 const barContainer = document.createElement('div');
-                 barContainer.className = 'bar-container';
 
-                 let winnerDisplay = '';
-                 if (result.winnerNames.length === 0) {
-                     winnerDisplay = 'N/A'; // No wins this month
-                 } else if (result.winnerNames.length === 1) {
-                     winnerDisplay = result.winnerNames[0].replace(/</g, "<").replace(/>/g, ">"); // Display winner name
-                 } else {
-                     winnerDisplay = 'Tie'; // Indicate a tie
-                 }
-
-                 // Tooltip to show tied players and score
-                 const tieTooltip = result.winnerNames.length > 1
-                    ? ` title="Tie: ${result.winnerNames.join(', ')} (${result.winningScore} wins)"`
-                    : (result.winnerNames.length === 1 ? ` title="${winnerDisplay} (${result.winningScore} wins)"` : '');
+             // Handle display of canvas vs. message
+             if (!hasData) {
+                noMonthlyChartDataMsg.textContent = `No wins recorded for ${year}.`;
+                noMonthlyChartDataMsg.classList.remove('hidden');
+                monthlyWinsCanvas.classList.add('hidden'); // Hide canvas
+                return; // Stop chart rendering
+             } else {
+                noMonthlyChartDataMsg.classList.add('hidden');
+                monthlyWinsCanvas.classList.remove('hidden'); // Show canvas
+             }
 
 
-                 barContainer.innerHTML = `
-                      <div class="bar-count"${tieTooltip}>${winnerDisplay}</div>
-                      <div class="bar" style="height: ${barHeightPercent}%;"></div>
-                      <div class="bar-label">${getMonthName(result.monthIndex)}</div>
-                 `;
-                 monthlyChartDiv.appendChild(barContainer);
-             });
-         };
+            // --- Create Chart.js Chart ---
+            const ctx = monthlyWinsCanvas.getContext('2d');
+             if (!ctx) {
+                console.error("Failed to get canvas context for monthly wins");
+                return;
+            }
+
+            const labels = monthlyResults.map(r => getMonthName(r.monthIndex));
+            const dataScores = monthlyResults.map(r => r.winningScore);
+
+            monthlyChartInstance = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Winning Score', // Bar height represents score
+                        data: dataScores,
+                        backgroundColor: '#fdc500', // Different color for variety
+                        borderColor: '#e8b700',
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1,
+                                precision: 0
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                // Use title to show Month Year clearly
+                                title: function(tooltipItems) {
+                                    const index = tooltipItems[0].dataIndex;
+                                    return `${getFullMonthName(index)} ${year}`;
+                                },
+                                // Use label callback to show winner(s) and score
+                                label: function(context) {
+                                    const index = context.dataIndex;
+                                    // Access the pre-calculated results for this month
+                                    const result = monthlyResults[index];
+                                    let winnerLabel = '';
+
+                                    if (!result || result.winnerNames.length === 0) {
+                                        winnerLabel = 'Winner: N/A';
+                                    } else if (result.winnerNames.length === 1) {
+                                        winnerLabel = `Winner: ${result.winnerNames[0]}`;
+                                    } else {
+                                         winnerLabel = `Tie: ${result.winnerNames.join(', ')}`;
+                                    }
+
+                                    const scoreLabel = `Score: ${context.parsed.y}`;
+                                    // Return array for multi-line tooltip
+                                    return [winnerLabel, scoreLabel];
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        };
+
 
         // Renders all sections that depend on the core data
         const renderApp = () => {
              renderPlayerManagementList();
              renderScoreTrackingList();
              renderTodaysWinsList();
-             renderDashboard(); // Re-render current dashboard view
+             renderDashboard(); // Re-render current dashboard view using new chart functions
         };
 
-        // --- Event Listeners (Mostly Unchanged, ensure rename logic updates UI correctly) ---
+        // --- Event Listeners ---
+        // (Listeners remain largely the same as before, ensuring they call renderApp or renderDashboard
+        // where appropriate, which now trigger the Chart.js rendering)
 
-        togglePlayerManagementBtn.addEventListener('click', () => { /* ... same ... */
-            playerManagementSection.classList.toggle('hidden');
-            const isHidden = playerManagementSection.classList.contains('hidden');
-            togglePlayerManagementBtn.setAttribute('aria-expanded', !isHidden);
-            togglePlayerManagementBtn.textContent = isHidden ? '⚙️ Manage' : '🔽 Close';
+        togglePlayerManagementBtn.addEventListener('click', () => {
+             playerManagementSection.classList.toggle('hidden');
+             const isHidden = playerManagementSection.classList.contains('hidden');
+             togglePlayerManagementBtn.setAttribute('aria-expanded', !isHidden);
+             togglePlayerManagementBtn.textContent = isHidden ? '⚙️ Manage' : '🔽 Close';
         });
         addPlayerBtn.addEventListener('click', () => addPlayer(newPlayerNameInput.value));
-        newPlayerNameInput.addEventListener('keypress', (e) => { /* ... same ... */
-             if (e.key === 'Enter') {
-                e.preventDefault(); // Prevent potential form submission
-                addPlayer(newPlayerNameInput.value);
-             }
-             addPlayerError.textContent = "";
-         });
+        newPlayerNameInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') { e.preventDefault(); addPlayer(newPlayerNameInput.value); } addPlayerError.textContent = ""; });
 
         playerListManagementUl.addEventListener('click', (e) => {
             const target = e.target;
@@ -883,97 +782,63 @@ const firebaseConfig = {
             if (!playerEntry) return;
             const playerId = playerEntry.dataset.playerId;
 
-            if (target.classList.contains('delete-player-btn')) {
-                deletePlayer(playerId);
-            } else if (target.classList.contains('rename-btn')) {
-                // Hide other rename forms
-                 playerListManagementUl.querySelectorAll('.rename-controls:not(.hidden)').forEach(ctrl => {
-                     const entry = ctrl.closest('.player-management-entry');
-                     if (entry && entry !== playerEntry) {
-                          entry.querySelector('.rename-controls').classList.add('hidden');
-                          entry.querySelector('.player-name-display').classList.remove('hidden');
-                          entry.querySelector('.action-buttons').classList.remove('hidden');
-                     }
+            if (target.classList.contains('delete-player-btn')) { deletePlayer(playerId); }
+            else if (target.classList.contains('rename-btn')) { /* ... show rename UI ... */
+                 playerListManagementUl.querySelectorAll('.rename-controls:not(.hidden)').forEach(ctrl => { /* ... hide others ... */
+                    const entry = ctrl.closest('.player-management-entry'); if (entry && entry !== playerEntry) { entry.querySelector('.rename-controls').classList.add('hidden'); entry.querySelector('.player-name-display').classList.remove('hidden'); entry.querySelector('.action-buttons').classList.remove('hidden'); }
                  });
-                // Show current rename form
-                playerEntry.querySelector('.player-name-display').classList.add('hidden');
-                playerEntry.querySelector('.action-buttons').classList.add('hidden');
-                const renameControls = playerEntry.querySelector('.rename-controls');
-                renameControls.classList.remove('hidden');
-                const input = renameControls.querySelector('.rename-input');
-                input.focus();
-                input.select();
-            } else if (target.classList.contains('save-rename-btn')) {
-                const input = playerEntry.querySelector('.rename-input');
-                renamePlayer(playerId, input.value); // renamePlayer now handles UI update on success
-            } else if (target.classList.contains('cancel-rename-btn')) {
-                 // Reset input value to original name before hiding
-                 const originalName = playerEntry.querySelector('.player-name-display').textContent;
-                 playerEntry.querySelector('.rename-input').value = originalName;
-                 // Hide form, show display/actions
-                 playerEntry.querySelector('.rename-controls').classList.add('hidden');
-                 playerEntry.querySelector('.player-name-display').classList.remove('hidden');
-                 playerEntry.querySelector('.action-buttons').classList.remove('hidden');
-             }
-        });
-         playerListManagementUl.addEventListener('keypress', (e) => {
-             if (e.key === 'Enter' && e.target.classList.contains('rename-input')) {
-                 e.preventDefault();
-                 const playerEntry = e.target.closest('.player-management-entry');
-                 if (playerEntry) renamePlayer(playerEntry.dataset.playerId, e.target.value);
-             }
-         });
-
-        scoreTrackingListUl.addEventListener('click', (e) => {
-            if (e.target.classList.contains('add-win-btn')) {
-                recordWin(e.target.dataset.playerId);
+                 playerEntry.querySelector('.player-name-display').classList.add('hidden'); playerEntry.querySelector('.action-buttons').classList.add('hidden');
+                 const renameControls = playerEntry.querySelector('.rename-controls'); renameControls.classList.remove('hidden');
+                 const input = renameControls.querySelector('.rename-input'); input.focus(); input.select();
             }
-        });
-
-        todaysWinsListUl.addEventListener('click', (e) => {
-             if (e.target.classList.contains('delete-win-btn')) {
-                 const winLi = e.target.closest('li');
-                 if (winLi?.dataset.winId) deleteWin(winLi.dataset.winId);
+            else if (target.classList.contains('save-rename-btn')) { const input = playerEntry.querySelector('.rename-input'); renamePlayer(playerId, input.value); }
+            else if (target.classList.contains('cancel-rename-btn')) { /* ... hide rename UI, restore name ... */
+                 const originalName = playerEntry.querySelector('.player-name-display').textContent; playerEntry.querySelector('.rename-input').value = originalName;
+                 playerEntry.querySelector('.rename-controls').classList.add('hidden'); playerEntry.querySelector('.player-name-display').classList.remove('hidden'); playerEntry.querySelector('.action-buttons').classList.remove('hidden');
              }
-         });
+        });
+         playerListManagementUl.addEventListener('keypress', (e) => { if (e.key === 'Enter' && e.target.classList.contains('rename-input')) { e.preventDefault(); const playerEntry = e.target.closest('.player-management-entry'); if (playerEntry) renamePlayer(playerEntry.dataset.playerId, e.target.value); } });
+
+        scoreTrackingListUl.addEventListener('click', (e) => { if (e.target.classList.contains('add-win-btn')) { recordWin(e.target.dataset.playerId); } });
+        todaysWinsListUl.addEventListener('click', (e) => { if (e.target.classList.contains('delete-win-btn')) { const winLi = e.target.closest('li'); if (winLi?.dataset.winId) deleteWin(winLi.dataset.winId); } });
 
         dashboardControls.addEventListener('click', (e) => {
             if (e.target.tagName === 'BUTTON' && e.target.dataset.period) {
                 currentDashboardPeriod = e.target.dataset.period;
-                currentDisplayDate = new Date(); // Reset date when changing period type
-                if (currentView !== 'player') {
-                     switchToPlayerView();
-                } else {
-                     renderDashboard();
-                }
+                currentDisplayDate = new Date();
+                if (currentView !== 'player') { switchToPlayerView(); }
+                else { renderDashboard(); }
             }
         });
 
         playerViewBtn.addEventListener('click', switchToPlayerView);
         monthlyViewBtn.addEventListener('click', switchToMonthlyView);
 
-        function switchToPlayerView() { /* ... same ... */
+        function switchToPlayerView() {
              if (currentView === 'player') return;
              currentView = 'player';
              winChartContainer.classList.remove('hidden');
              monthlyChartContainer.classList.add('hidden');
              playerViewBtn.classList.add('active');
              monthlyViewBtn.classList.remove('active');
-             currentDisplayDate = new Date();
-             renderDashboard();
+             // Reset date only if switching from a view that might have a different date context (like yearly)
+             // currentDisplayDate = new Date();
+             renderDashboard(); // Render the newly selected view
         }
-        function switchToMonthlyView() { /* ... same ... */
+        function switchToMonthlyView() {
              if (currentView === 'monthly') return;
              currentView = 'monthly';
              winChartContainer.classList.add('hidden');
              monthlyChartContainer.classList.remove('hidden');
              playerViewBtn.classList.remove('active');
              monthlyViewBtn.classList.add('active');
-             currentDisplayDate = new Date();
-             renderDashboard();
+             // Reset date to ensure the year view starts fresh (or keep current year)
+             // currentDisplayDate = new Date();
+             renderDashboard(); // Render the newly selected view
         }
 
-        prevPeriodBtn.addEventListener('click', () => { /* ... same ... */
+
+        prevPeriodBtn.addEventListener('click', () => {
             const newDate = new Date(currentDisplayDate);
             if (currentDashboardPeriod === 'week') newDate.setDate(newDate.getDate() - 7);
             else if (currentDashboardPeriod === 'month') newDate.setMonth(newDate.getMonth() - 1);
@@ -981,7 +846,7 @@ const firebaseConfig = {
             currentDisplayDate = newDate;
             renderDashboard();
         });
-        nextPeriodBtn.addEventListener('click', () => { /* ... same ... */
+        nextPeriodBtn.addEventListener('click', () => {
             const newDate = new Date(currentDisplayDate);
             if (currentDashboardPeriod === 'week') newDate.setDate(newDate.getDate() + 7);
             else if (currentDashboardPeriod === 'month') newDate.setMonth(newDate.getMonth() + 1);
@@ -989,36 +854,24 @@ const firebaseConfig = {
             const { end } = getPeriodRange(currentDashboardPeriod, newDate);
             const todayEndOfDay = new Date(); todayEndOfDay.setHours(23, 59, 59, 999);
             if (end.getTime() <= todayEndOfDay.getTime()) {
-                 currentDisplayDate = newDate;
-                 renderDashboard();
-            } else {
-                 console.log("Cannot navigate to future period beyond today.");
-                 nextPeriodBtn.disabled = true;
-            }
+                 currentDisplayDate = newDate; renderDashboard();
+            } else { nextPeriodBtn.disabled = true; }
         });
-
-        prevYearBtn.addEventListener('click', () => { /* ... same ... */
-             const newDate = new Date(currentDisplayDate);
-             newDate.setFullYear(newDate.getFullYear() - 1);
-             currentDisplayDate = newDate;
-             renderDashboard();
+        prevYearBtn.addEventListener('click', () => {
+             const newDate = new Date(currentDisplayDate); newDate.setFullYear(newDate.getFullYear() - 1);
+             currentDisplayDate = newDate; renderDashboard();
         });
-         nextYearBtn.addEventListener('click', () => { /* ... same ... */
-             const newDate = new Date(currentDisplayDate);
-             newDate.setFullYear(newDate.getFullYear() + 1);
-             if (newDate.getFullYear() <= new Date().getFullYear()) {
-                 currentDisplayDate = newDate;
-                 renderDashboard();
-             } else {
-                 console.log("Cannot navigate to future year.");
-                 nextYearBtn.disabled = true;
-             }
+         nextYearBtn.addEventListener('click', () => {
+             const newDate = new Date(currentDisplayDate); newDate.setFullYear(newDate.getFullYear() + 1);
+             if (newDate.getFullYear() <= new Date().getFullYear()) { currentDisplayDate = newDate; renderDashboard(); }
+             else { nextYearBtn.disabled = true; }
          });
+
 
         // --- Initial Load ---
         (async () => {
             switchToPlayerView(); // Set initial view state
-            await loadData(); // Load data and do initial render
+            await loadData(); // Load data and do initial render (which includes dashboard)
         })();
 
     </script>
