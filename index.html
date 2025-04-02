@@ -4,11 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Rummikub Win Tracker</title>
-    <!-- 1. Include Chart.js Library -->
+    <!-- Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- 2. Include Chart.js Datalabels Plugin (AFTER Chart.js) -->
     <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
     <style>
+        /* CSS Styles (keep existing styles) */
         /* --- Basic Reset & Defaults --- */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { height: 100%; /* Ensure body takes full height */ }
@@ -19,7 +19,7 @@
         h1 { text-align: center; margin-bottom: 1em; color: #012a4a; }
         p { margin-bottom: 1em; }
         /* --- Buttons --- */
-        button { display: inline-block; padding: 10px 18px; font-size: 1rem; font-weight: bold; color: #fff; background-color: #219ebc; border: none; border-radius: 5px; cursor: pointer; transition: background-color 0.2s ease; min-height: 44px; vertical-align: middle; }
+        button { display: inline-block; padding: 10px 18px; font-size: 1rem; font-weight: bold; color: #fff; background-color: #219ebc; border: none; border-radius: 5px; cursor: pointer; transition: background-color 0.2s ease; min-height: 44px; vertical-align: middle; -webkit-tap-highlight-color: transparent; /* Prevent flash on mobile tap */ }
         button:hover, button:focus { background-color: #1a7f9a; outline: none; }
         button:disabled { background-color: #adb5bd; cursor: not-allowed; }
         button.secondary { background-color: #6c757d; }
@@ -199,9 +199,10 @@
     <!-- Audio Element for Timer -->
     <audio id="timerAudio" src="https://www.dropbox.com/scl/fi/3h6ax7x9tqxm4ghq6w7oh/beep-125033.mp3?rlkey=isiq9pp7ojw2bbptixsintda1&st=qvnl6u95&dl=1" preload="auto"></audio>
 
-
+    <!-- App Container -->
     <div class="app-container">
-        <header>
+        <!-- Header, Player Management, Dashboard, Score Tracking, Today's Wins (keep existing structure) -->
+         <header>
             <h1>Rummikub Wins</h1>
             <div class="header-buttons">
                  <button id="toggleTimerBtn" aria-label="Show Timer">⏱️ Timer</button>
@@ -273,7 +274,6 @@
         <!-- Today's Recorded Wins Management -->
         <section id="todaysWins">
              <h3>Recorded Today (<span id="todayDateDisplay"></span>)</h3>
-             <!-- ADDED: Summary Div -->
              <div id="todaysSummary" class="todays-summary hidden"></div>
              <ul id="todaysWinsList"></ul>
              <p id="noWinsToday" class="no-data">No wins recorded yet today.</p>
@@ -286,7 +286,6 @@
         <div id="firebaseError" style="display: none; padding: 10px; margin-top: 10px; background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; border-radius: 5px; font-size: 0.9em;">
              <strong>Firebase Error:</strong> <span id="firebaseErrorMessage"></span>
         </div>
-
     </div><!-- /app-container -->
 
     <script type="module">
@@ -296,7 +295,6 @@
         import { getFirestore, collection, getDocs, addDoc, deleteDoc, updateDoc, doc, query, where, orderBy, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-firestore.js";
 
         // --- Firebase Configuration (Replace with your actual config!) ---
-        // *** IMPORTANT: Replace with your actual Firebase project configuration ***
         const firebaseConfig = {
           apiKey: "AIzaSyD-e3H5CaoQobBqFwzDnCGZCUbniZQg_J0", // Replace!
           authDomain: "i-am-awesome-tasker.firebaseapp.com", // Replace!
@@ -329,63 +327,62 @@
         // --- Global State ---
         let players = [];
         let wins = [];
-        let currentDashboardPeriod = 'month'; // Default to month
+        let currentDashboardPeriod = 'month';
         let currentDisplayDate = new Date();
-        let currentView = 'player'; // 'player' or 'monthly'
+        let currentView = 'player';
         let playerWinChartInstance = null;
         let monthlyChartInstance = null;
         // --- Timer State ---
-        let timerInterval = null;
-        const TIMER_DURATION_SECONDS = 60; // 1 minute
+        let timerTimeoutId = null; // CHANGED: Use timeout ID instead of interval ID
+        const TIMER_DURATION_SECONDS = 60;
         let timerRemainingSeconds = TIMER_DURATION_SECONDS;
         let isTimerVisible = false;
-        let audioUnlocked = false; // Flag to track if audio context is unlocked
+        let audioUnlocked = false;
         // --- Wake Lock State ---
         let wakeLockSentinel = null;
 
         // --- DOM Elements ---
-        const togglePlayerManagementBtn = document.getElementById('togglePlayerManagement');
-        const playerManagementSection = document.getElementById('playerManagement');
-        const addPlayerBtn = document.getElementById('addPlayerBtn');
-        const newPlayerNameInput = document.getElementById('newPlayerName');
-        const addPlayerError = document.getElementById('addPlayerError');
-        const playerListManagementUl = document.getElementById('playerListManagement');
-        const noPlayersManagedMsg = document.getElementById('noPlayersManaged');
-        const dashboardControls = document.querySelector('.dashboard-controls');
-        const playerViewBtn = document.getElementById('playerViewBtn');
-        const monthlyViewBtn = document.getElementById('monthlyViewBtn');
-        const winChartContainer = document.getElementById('winChartContainer');
-        const winChartTitle = document.getElementById('winChartTitle');
-        const playerWinCanvas = document.getElementById('playerWinCanvas');
-        const noChartDataMsg = document.getElementById('noChartData');
-        const prevPeriodBtn = document.getElementById('prevPeriodBtn');
-        const nextPeriodBtn = document.getElementById('nextPeriodBtn');
-        const monthlyChartContainer = document.getElementById('monthlyChartContainer');
-        const monthlyChartTitle = document.getElementById('monthlyChartTitle');
-        const monthlyWinsCanvas = document.getElementById('monthlyWinsCanvas');
-        const noMonthlyChartDataMsg = document.getElementById('noMonthlyChartData');
-        const prevYearBtn = document.getElementById('prevYearBtn');
-        const nextYearBtn = document.getElementById('nextYearBtn');
-        const scoreTrackingListUl = document.getElementById('scoreTrackingList');
-        const noPlayersForScoringMsg = document.getElementById('noPlayersForScoring');
-        const todayDateDisplay = document.getElementById('todayDateDisplay');
-        const todaysWinsListUl = document.getElementById('todaysWinsList');
-        const noWinsTodayMsg = document.getElementById('noWinsToday');
-        const todaysSummaryDiv = document.getElementById('todaysSummary'); // Summary Div Ref
-        // --- Timer DOM Elements ---
-        const toggleTimerBtn = document.getElementById('toggleTimerBtn');
-        const timerOverlay = document.getElementById('timerOverlay');
-        const timerFill = document.getElementById('timerFill');
-        const timerDisplay = document.getElementById('timerDisplay');
-        const hideTimerBtn = document.getElementById('hideTimerBtn');
-        const timerAudio = document.getElementById('timerAudio');
-        const nextTimerBtn = document.getElementById('nextTimerBtn');
-        // --- Total Wins Display Elements ---
-        const totalPlayerWinsDisplay = document.getElementById('totalPlayerWinsDisplay');
-        const totalMonthlyWinsDisplay = document.getElementById('totalMonthlyWinsDisplay');
-
+        // (Keep existing DOM element references)
+         const togglePlayerManagementBtn = document.getElementById('togglePlayerManagement');
+         const playerManagementSection = document.getElementById('playerManagement');
+         const addPlayerBtn = document.getElementById('addPlayerBtn');
+         const newPlayerNameInput = document.getElementById('newPlayerName');
+         const addPlayerError = document.getElementById('addPlayerError');
+         const playerListManagementUl = document.getElementById('playerListManagement');
+         const noPlayersManagedMsg = document.getElementById('noPlayersManaged');
+         const dashboardControls = document.querySelector('.dashboard-controls');
+         const playerViewBtn = document.getElementById('playerViewBtn');
+         const monthlyViewBtn = document.getElementById('monthlyViewBtn');
+         const winChartContainer = document.getElementById('winChartContainer');
+         const winChartTitle = document.getElementById('winChartTitle');
+         const playerWinCanvas = document.getElementById('playerWinCanvas');
+         const noChartDataMsg = document.getElementById('noChartData');
+         const prevPeriodBtn = document.getElementById('prevPeriodBtn');
+         const nextPeriodBtn = document.getElementById('nextPeriodBtn');
+         const monthlyChartContainer = document.getElementById('monthlyChartContainer');
+         const monthlyChartTitle = document.getElementById('monthlyChartTitle');
+         const monthlyWinsCanvas = document.getElementById('monthlyWinsCanvas');
+         const noMonthlyChartDataMsg = document.getElementById('noMonthlyChartData');
+         const prevYearBtn = document.getElementById('prevYearBtn');
+         const nextYearBtn = document.getElementById('nextYearBtn');
+         const scoreTrackingListUl = document.getElementById('scoreTrackingList');
+         const noPlayersForScoringMsg = document.getElementById('noPlayersForScoring');
+         const todayDateDisplay = document.getElementById('todayDateDisplay');
+         const todaysWinsListUl = document.getElementById('todaysWinsList');
+         const noWinsTodayMsg = document.getElementById('noWinsToday');
+         const todaysSummaryDiv = document.getElementById('todaysSummary');
+         const toggleTimerBtn = document.getElementById('toggleTimerBtn');
+         const timerOverlay = document.getElementById('timerOverlay');
+         const timerFill = document.getElementById('timerFill');
+         const timerDisplay = document.getElementById('timerDisplay');
+         const hideTimerBtn = document.getElementById('hideTimerBtn');
+         const timerAudio = document.getElementById('timerAudio');
+         const nextTimerBtn = document.getElementById('nextTimerBtn');
+         const totalPlayerWinsDisplay = document.getElementById('totalPlayerWinsDisplay');
+         const totalMonthlyWinsDisplay = document.getElementById('totalMonthlyWinsDisplay');
 
         // --- Utility Functions ---
+        // (Keep existing utility functions: getTodayDateString, formatTime, getMonthName, getFullMonthName, getPeriodRange, sanitizeHTML, pluralize)
         const getTodayDateString = () => new Date().toDateString();
         const formatTime = (timestamp) => { if (!timestamp) return ''; const date = timestamp.toDate ? timestamp.toDate() : (timestamp instanceof Date ? timestamp : null); if (!date) return ''; return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); };
         const getMonthName = (monthIndex) => ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][monthIndex];
@@ -394,158 +391,212 @@
         const sanitizeHTML = (str) => { const temp = document.createElement('div'); temp.textContent = str; return temp.innerHTML; };
         const pluralize = (count, singular, plural = null) => { plural = plural ?? singular + 's'; return count === 1 ? `${count} ${singular}` : `${count} ${plural}`; }
 
-
         // --- Data Handling Functions (Firebase) ---
-        // ... (Keep existing Firebase functions: loadData, addPlayer, deletePlayer, renamePlayer, recordWin, deleteWin, getWinsForPeriodLocal, getWinsForYearLocal) ...
-         const loadData = async () => { if (!db) { console.error("DB not available."); return; } console.log("Loading data..."); try { const playersCollection = collection(db, "players"); const playerQuery = query(playersCollection, orderBy("name")); const playerSnapshot = await getDocs(playerQuery); players = playerSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); const winsCollection = collection(db, "wins"); const winSnapshot = await getDocs(winsCollection); wins = winSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); wins = wins.filter(w => w.timestamp && typeof w.timestamp.toDate === 'function'); wins.sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis()); } catch (error) { console.error("Error loading data:", error); const e = document.getElementById('firebaseError'); document.getElementById('firebaseErrorMessage').textContent = `Failed to load data. Error: ${error.message}`; e.style.display = 'block'; players = []; wins = []; } renderApp(); };
-         const addPlayer = async (name) => { if (!db) { alert("DB error."); return; } const tN = name.trim(); if (!tN) { addPlayerError.textContent = "Name empty."; return; } if (players.some(p => p.name.toLowerCase() === tN.toLowerCase())) { addPlayerError.textContent = "Name exists."; return; } addPlayerError.textContent = ""; addPlayerBtn.disabled = true; try { const dR = await addDoc(collection(db, "players"), { name: tN }); players.push({ id: dR.id, name: tN }); players.sort((a, b) => a.name.localeCompare(b.name)); renderApp(); newPlayerNameInput.value = ''; } catch (error) { console.error("Error adding:", error); addPlayerError.textContent = `Failed: ${error.message}`; } finally { addPlayerBtn.disabled = false; } };
-         const deletePlayer = async (playerId) => { if (!db) { alert("DB error."); return; } const p = players.find(pl => pl.id === playerId); if (!p || !confirm(`Delete ${p.name}? Wins remain as 'Unknown'.`)) return; const dB = playerListManagementUl.querySelector(`.player-management-entry[data-player-id="${playerId}"] .delete-player-btn`); if (dB) dB.disabled = true; try { await deleteDoc(doc(db, "players", playerId)); players = players.filter(pl => pl.id !== playerId); renderApp(); } catch (error) { console.error("Error deleting:", error); alert(`Failed: ${error.message}`); if (dB) dB.disabled = false; } };
-         const renamePlayer = async (playerId, newName) => { if (!db) { alert("DB error."); return false; } const tN = newName.trim(); if (!tN) { alert("Name empty."); return false; } if (players.some(p => p.id !== playerId && p.name.toLowerCase() === tN.toLowerCase())) { alert("Name exists."); return false; } const pI = players.findIndex(p => p.id === playerId); if (pI === -1) return false; const en = playerListManagementUl.querySelector(`.player-management-entry[data-player-id="${playerId}"]`); const sB = en?.querySelector('.save-rename-btn'); const cB = en?.querySelector('.cancel-rename-btn'); if(sB) sB.disabled = true; if(cB) cB.disabled = true; try { await updateDoc(doc(db, "players", playerId), { name: tN }); players[pI].name = tN; players.sort((a, b) => a.name.localeCompare(b.name)); renderApp(); return true; } catch (error) { console.error("Error renaming:", error); alert(`Failed: ${error.message}`); if(sB) sB.disabled = false; if(cB) cB.disabled = false; return false; } };
-         const recordWin = async (playerId) => { if (!db) { alert("DB error."); return; } const player = players.find(pl => pl.id === playerId); if (!player) return; const winButton = scoreTrackingListUl.querySelector(`button.add-win-btn[data-player-id="${playerId}"]`); const playerInfoDiv = scoreTrackingListUl.querySelector(`li[data-player-id="${playerId}"] .player-info`); if (winButton) winButton.disabled = true; const existingFeedback = playerInfoDiv?.querySelector('.win-feedback'); if (existingFeedback) existingFeedback.remove(); try { const docRef = await addDoc(collection(db, "wins"), { playerId: playerId, timestamp: serverTimestamp() }); const newWin = { id: docRef.id, playerId: playerId, timestamp: Timestamp.now() }; wins.unshift(newWin); const playerName = sanitizeHTML(player.name); const feedbackSpan = document.createElement('span'); feedbackSpan.className = 'win-feedback'; feedbackSpan.textContent = `Win added for ${playerName}!`; if (playerInfoDiv) { playerInfoDiv.appendChild(feedbackSpan); setTimeout(() => { feedbackSpan.remove(); }, 3000); } renderTodaysWinsList(); renderDashboard(); } catch (error) { console.error("Error recording win:", error); alert(`Failed to record win: ${error.message}`); } finally { setTimeout(() => { if (winButton) winButton.disabled = false; }, 500); } };
-         const deleteWin = async (winId) => { if (!db) { alert("DB error."); return; } const wI = wins.findIndex(w => w.id === winId); if (wI === -1) return; const wD = wins[wI]; if (!wD.timestamp || typeof wD.timestamp.toDate !== 'function') return; const pN = players.find(p=>p.id === wD.playerId)?.name ?? 'Unknown Player'; if (!confirm(`Delete win for ${sanitizeHTML(pN)} at ${formatTime(wD.timestamp)}?`)) return; const dB = todaysWinsListUl.querySelector(`li[data-win-id="${winId}"] .delete-win-btn`); if(dB) dB.disabled = true; try { await deleteDoc(doc(db, "wins", winId)); wins.splice(wI, 1); renderTodaysWinsList(); renderDashboard(); } catch (error) { console.error("Error deleting win:", error); alert(`Failed: ${error.message}`); if(dB) dB.disabled = false; } };
-         const getWinsForPeriodLocal = (period, baseDate = new Date()) => { const { start, end } = getPeriodRange(period, baseDate); const sT = start.getTime(); const eT = end.getTime(); return wins.filter(w => { if (!w.timestamp || typeof w.timestamp.toDate !== 'function') return false; const wT = w.timestamp.toDate().getTime(); return wT >= sT && wT <= eT; }); };
-         const getWinsForYearLocal = (year) => { const s = new Date(year, 0, 1); const e = new Date(year, 11, 31, 23, 59, 59, 999); const sT = s.getTime(); const eT = e.getTime(); return wins.filter(w => { if (!w.timestamp || typeof w.timestamp.toDate !== 'function') return false; const wT = w.timestamp.toDate().getTime(); return wT >= sT && wT <= eT; }); };
-
+        // (Keep existing Firebase functions)
+        const loadData = async () => { if (!db) { console.error("DB not available."); return; } console.log("Loading data..."); try { const playersCollection = collection(db, "players"); const playerQuery = query(playersCollection, orderBy("name")); const playerSnapshot = await getDocs(playerQuery); players = playerSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); const winsCollection = collection(db, "wins"); const winSnapshot = await getDocs(winsCollection); wins = winSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); wins = wins.filter(w => w.timestamp && typeof w.timestamp.toDate === 'function'); wins.sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis()); } catch (error) { console.error("Error loading data:", error); const e = document.getElementById('firebaseError'); document.getElementById('firebaseErrorMessage').textContent = `Failed to load data. Error: ${error.message}`; e.style.display = 'block'; players = []; wins = []; } renderApp(); };
+        const addPlayer = async (name) => { if (!db) { alert("DB error."); return; } const tN = name.trim(); if (!tN) { addPlayerError.textContent = "Name empty."; return; } if (players.some(p => p.name.toLowerCase() === tN.toLowerCase())) { addPlayerError.textContent = "Name exists."; return; } addPlayerError.textContent = ""; addPlayerBtn.disabled = true; try { const dR = await addDoc(collection(db, "players"), { name: tN }); players.push({ id: dR.id, name: tN }); players.sort((a, b) => a.name.localeCompare(b.name)); renderApp(); newPlayerNameInput.value = ''; } catch (error) { console.error("Error adding:", error); addPlayerError.textContent = `Failed: ${error.message}`; } finally { addPlayerBtn.disabled = false; } };
+        const deletePlayer = async (playerId) => { if (!db) { alert("DB error."); return; } const p = players.find(pl => pl.id === playerId); if (!p || !confirm(`Delete ${p.name}? Wins remain as 'Unknown'.`)) return; const dB = playerListManagementUl.querySelector(`.player-management-entry[data-player-id="${playerId}"] .delete-player-btn`); if (dB) dB.disabled = true; try { await deleteDoc(doc(db, "players", playerId)); players = players.filter(pl => pl.id !== playerId); renderApp(); } catch (error) { console.error("Error deleting:", error); alert(`Failed: ${error.message}`); if (dB) dB.disabled = false; } };
+        const renamePlayer = async (playerId, newName) => { if (!db) { alert("DB error."); return false; } const tN = newName.trim(); if (!tN) { alert("Name empty."); return false; } if (players.some(p => p.id !== playerId && p.name.toLowerCase() === tN.toLowerCase())) { alert("Name exists."); return false; } const pI = players.findIndex(p => p.id === playerId); if (pI === -1) return false; const en = playerListManagementUl.querySelector(`.player-management-entry[data-player-id="${playerId}"]`); const sB = en?.querySelector('.save-rename-btn'); const cB = en?.querySelector('.cancel-rename-btn'); if(sB) sB.disabled = true; if(cB) cB.disabled = true; try { await updateDoc(doc(db, "players", playerId), { name: tN }); players[pI].name = tN; players.sort((a, b) => a.name.localeCompare(b.name)); renderApp(); return true; } catch (error) { console.error("Error renaming:", error); alert(`Failed: ${error.message}`); if(sB) sB.disabled = false; if(cB) cB.disabled = false; return false; } };
+        const recordWin = async (playerId) => { if (!db) { alert("DB error."); return; } const player = players.find(pl => pl.id === playerId); if (!player) return; const winButton = scoreTrackingListUl.querySelector(`button.add-win-btn[data-player-id="${playerId}"]`); const playerInfoDiv = scoreTrackingListUl.querySelector(`li[data-player-id="${playerId}"] .player-info`); if (winButton) winButton.disabled = true; const existingFeedback = playerInfoDiv?.querySelector('.win-feedback'); if (existingFeedback) existingFeedback.remove(); try { const docRef = await addDoc(collection(db, "wins"), { playerId: playerId, timestamp: serverTimestamp() }); const newWin = { id: docRef.id, playerId: playerId, timestamp: Timestamp.now() }; wins.unshift(newWin); const playerName = sanitizeHTML(player.name); const feedbackSpan = document.createElement('span'); feedbackSpan.className = 'win-feedback'; feedbackSpan.textContent = `Win added for ${playerName}!`; if (playerInfoDiv) { playerInfoDiv.appendChild(feedbackSpan); setTimeout(() => { feedbackSpan.remove(); }, 3000); } renderTodaysWinsList(); renderDashboard(); } catch (error) { console.error("Error recording win:", error); alert(`Failed to record win: ${error.message}`); } finally { setTimeout(() => { if (winButton) winButton.disabled = false; }, 500); } };
+        const deleteWin = async (winId) => { if (!db) { alert("DB error."); return; } const wI = wins.findIndex(w => w.id === winId); if (wI === -1) return; const wD = wins[wI]; if (!wD.timestamp || typeof wD.timestamp.toDate !== 'function') return; const pN = players.find(p=>p.id === wD.playerId)?.name ?? 'Unknown Player'; if (!confirm(`Delete win for ${sanitizeHTML(pN)} at ${formatTime(wD.timestamp)}?`)) return; const dB = todaysWinsListUl.querySelector(`li[data-win-id="${winId}"] .delete-win-btn`); if(dB) dB.disabled = true; try { await deleteDoc(doc(db, "wins", winId)); wins.splice(wI, 1); renderTodaysWinsList(); renderDashboard(); } catch (error) { console.error("Error deleting win:", error); alert(`Failed: ${error.message}`); if(dB) dB.disabled = false; } };
+        const getWinsForPeriodLocal = (period, baseDate = new Date()) => { const { start, end } = getPeriodRange(period, baseDate); const sT = start.getTime(); const eT = end.getTime(); return wins.filter(w => { if (!w.timestamp || typeof w.timestamp.toDate !== 'function') return false; const wT = w.timestamp.toDate().getTime(); return wT >= sT && wT <= eT; }); };
+        const getWinsForYearLocal = (year) => { const s = new Date(year, 0, 1); const e = new Date(year, 11, 31, 23, 59, 59, 999); const sT = s.getTime(); const eT = e.getTime(); return wins.filter(w => { if (!w.timestamp || typeof w.timestamp.toDate !== 'function') return false; const wT = w.timestamp.toDate().getTime(); return wT >= sT && wT <= eT; }); };
 
         // --- Rendering Functions ---
-        // ... (Keep existing rendering functions: renderPlayerManagementList, renderScoreTrackingList, renderTodaysWinsList, renderDashboard, renderPlayerWinsChart, renderMonthlyBreakdownChart, renderApp) ...
+        // (Keep existing rendering functions)
         const renderPlayerManagementList = () => { playerListManagementUl.innerHTML = ''; noPlayersManagedMsg.classList.toggle('hidden', players.length > 0); if (players.length === 0) return; players.forEach(p => { const li = document.createElement('li'); li.className = 'player-management-entry'; li.dataset.playerId = p.id; const sN = sanitizeHTML(p.name); li.innerHTML = ` <span class="player-name-display">${sN}</span> <div class="rename-controls hidden"> <input type="text" class="rename-input" value="${sN}" aria-label="New name for ${sN}"> <button class="save-rename-btn icon-button" aria-label="Save rename">✔️</button> <button class="cancel-rename-btn icon-button secondary" aria-label="Cancel rename">❌</button> </div> <div class="action-buttons"> <button class="rename-btn icon-button secondary" aria-label="Rename ${sN}">✏️ Rename</button> <button class="delete-player-btn icon-button danger" aria-label="Delete ${sN}">🗑️ Delete</button> </div> `; playerListManagementUl.appendChild(li); }); };
         const renderScoreTrackingList = () => { scoreTrackingListUl.innerHTML = ''; noPlayersForScoringMsg.classList.toggle('hidden', players.length > 0); if (players.length === 0) return; players.forEach(p => { const li = document.createElement('li'); li.dataset.playerId = p.id; const sN = sanitizeHTML(p.name); li.innerHTML = ` <div class="player-info"> <span class="player-name">${sN}</span> </div> <button class="add-win-btn" data-player-id="${p.id}">+ Win</button> `; scoreTrackingListUl.appendChild(li); }); };
         const renderTodaysWinsList = () => { todaysWinsListUl.innerHTML = ''; todaysSummaryDiv.innerHTML = ''; todaysSummaryDiv.classList.add('hidden'); const todayStr = getTodayDateString(); todayDateDisplay.textContent = todayStr; const todaysWins = wins.filter(w => w.timestamp?.toDate().toDateString() === todayStr); noWinsTodayMsg.classList.toggle('hidden', todaysWins.length > 0); if (todaysWins.length > 0) { const winsByPlayerToday = todaysWins.reduce((acc, win) => { acc[win.playerId] = (acc[win.playerId] || 0) + 1; return acc; }, {}); const summaryItems = []; const sortedPlayerIds = Object.keys(winsByPlayerToday).sort((a, b) => { const playerA = players.find(p => p.id === a); const playerB = players.find(p => p.id === b); const nameA = playerA ? playerA.name : 'Unknown'; const nameB = playerB ? playerB.name : 'Unknown'; return nameA.localeCompare(nameB); }); sortedPlayerIds.forEach(playerId => { const count = winsByPlayerToday[playerId]; const player = players.find(p => p.id === playerId); const playerName = player ? sanitizeHTML(player.name) : 'Unknown Player'; summaryItems.push(`<span>${playerName}: ${pluralize(count, 'win')}</span>`); }); if (summaryItems.length > 0) { todaysSummaryDiv.innerHTML = `<strong>Summary:</strong> ${summaryItems.join(' ')}`; todaysSummaryDiv.classList.remove('hidden'); } todaysWins.forEach(w => { const player = players.find(pl => pl.id === w.playerId); const playerName = player ? sanitizeHTML(player.name) : 'Unknown Player'; const li = document.createElement('li'); li.dataset.winId = w.id; li.innerHTML = ` <span class="player-name">${playerName}</span> <span class="win-timestamp">${formatTime(w.timestamp)}</span> <button class="delete-win-btn icon-button danger" aria-label="Delete this win">🗑️</button> `; todaysWinsListUl.appendChild(li); }); } };
-        const renderDashboard = () => { console.log(`renderDashboard - View: ${currentView}, Period: ${currentDashboardPeriod}, Date: ${currentDisplayDate.toDateString()}`); dashboardControls.querySelectorAll('button[data-period]').forEach(b => { b.classList.toggle('active', b.dataset.period === currentDashboardPeriod); }); playerViewBtn.classList.toggle('active', currentView === 'player'); monthlyViewBtn.classList.toggle('active', currentView === 'monthly'); winChartContainer.classList.toggle('hidden', currentView !== 'player'); monthlyChartContainer.classList.toggle('hidden', currentView === 'player'); if (currentView === 'player') { renderPlayerWinsChart(currentDashboardPeriod, currentDisplayDate); } else if (currentView === 'monthly') { renderMonthlyBreakdownChart(currentDisplayDate.getFullYear()); } };
-        const renderPlayerWinsChart = (period, displayDate) => { console.log(`renderPlayerWinsChart - Period: ${period}, Date: ${displayDate.toDateString()}`); if (playerWinChartInstance) { playerWinChartInstance.destroy(); playerWinChartInstance = null; } const { start, end } = getPeriodRange(period, displayDate); let chartTitleText = ''; const today = new Date(); today.setHours(0, 0, 0, 0); const currentPeriodRange = getPeriodRange(period, today); const isCurrentPeriod = currentPeriodRange.start.getTime() === start.getTime(); switch (period) { case 'week': chartTitleText = isCurrentPeriod ? 'Wins This Week' : `Week of ${start.toLocaleDateString()}`; break; case 'month': const monthName = getFullMonthName(displayDate.getMonth()); chartTitleText = isCurrentPeriod ? `Wins This ${monthName}` : `Wins ${monthName} ${displayDate.getFullYear()}`; break; case 'year': chartTitleText = isCurrentPeriod ? `Wins This Year (${displayDate.getFullYear()})` : `Wins ${displayDate.getFullYear()}`; break; } winChartTitle.textContent = chartTitleText; prevPeriodBtn.classList.remove('hidden'); nextPeriodBtn.classList.remove('hidden'); const endOfToday = new Date(); endOfToday.setHours(23, 59, 59, 999); nextPeriodBtn.disabled = end.getTime() >= endOfToday.getTime(); const periodWins = getWinsForPeriodLocal(period, displayDate); const totalWinsCount = periodWins.length; totalPlayerWinsDisplay.textContent = `Total Wins: ${totalWinsCount}`; totalPlayerWinsDisplay.classList.remove('hidden'); const hasPlayers = players.length > 0; const hasData = totalWinsCount > 0; let playerData = []; if (hasPlayers) { const winsByPlayer = players.reduce((acc, p) => { acc[p.id] = { name: p.name, count: 0 }; return acc; }, {}); periodWins.forEach(w => { if (w.playerId && winsByPlayer[w.playerId]) { winsByPlayer[w.playerId].count++; } }); playerData = Object.values(winsByPlayer); playerData.sort((a, b) => a.name.localeCompare(b.name)); } const showChart = hasPlayers && hasData; playerWinCanvas.classList.toggle('hidden', !showChart); noChartDataMsg.classList.toggle('hidden', showChart); if (!hasPlayers) { noChartDataMsg.textContent = "Add players to see statistics."; totalPlayerWinsDisplay.classList.add('hidden'); } else if (!hasData) { noChartDataMsg.textContent = "No wins recorded for this period."; } if (showChart) { const ctx = playerWinCanvas.getContext('2d'); if (!ctx) { console.error("Failed to get playerWinCanvas context"); return; } const labels = playerData.map(p => p.name); const dataCounts = playerData.map(p => p.count); playerWinChartInstance = new Chart(ctx, { type: 'bar', data: { labels: labels, datasets: [{ label: 'Wins', data: dataCounts, backgroundColor: '#219ebc', borderColor: '#1a7f9a', borderWidth: 1 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(c) { let l = c.dataset.label || ''; if (l) { l += ': '; } if (c.parsed.y !== null) { l += c.parsed.y + (c.parsed.y === 1 ? ' win' : ' wins'); } return l; } } } } } }); } };
-        const renderMonthlyBreakdownChart = (year) => { console.log(`renderMonthlyBreakdownChart - Year: ${year}`); if (monthlyChartInstance) { monthlyChartInstance.destroy(); monthlyChartInstance = null; } monthlyChartTitle.textContent = `Monthly Winners for ${year}`; nextYearBtn.disabled = year >= new Date().getFullYear(); const yearWins = getWinsForYearLocal(year); const totalWinsCount = yearWins.length; const hasData = totalWinsCount > 0; totalMonthlyWinsDisplay.textContent = `Total Wins: ${totalWinsCount}`; totalMonthlyWinsDisplay.classList.remove('hidden'); let monthlyResults = []; let overallMaxWinningScore = 0; if(hasData) { const monthlyPlayerWins = {}; yearWins.forEach(win => { if (win.timestamp && typeof win.timestamp.toDate === 'function' && win.playerId) { const mI = win.timestamp.toDate().getMonth(); monthlyPlayerWins[mI] = monthlyPlayerWins[mI] || {}; monthlyPlayerWins[mI][win.playerId] = (monthlyPlayerWins[mI][win.playerId] || 0) + 1; } }); for (let i = 0; i < 12; i++) { const monthData = monthlyPlayerWins[i]; let winners = []; let maxScore = 0; if (monthData && Object.keys(monthData).length > 0) { maxScore = Math.max(...Object.values(monthData)); if (maxScore > overallMaxWinningScore) { overallMaxWinningScore = maxScore; } winners = Object.entries(monthData) .filter(([_, score]) => score === maxScore) .map(([playerId, _]) => sanitizeHTML(players.find(p => p.id === playerId)?.name ?? 'Unknown')); } monthlyResults.push({ monthIndex: i, winnerNames: winners, winningScore: maxScore }); } } else { for (let i = 0; i < 12; i++) { monthlyResults.push({ monthIndex: i, winnerNames: [], winningScore: 0 }); } } monthlyWinsCanvas.classList.toggle('hidden', !hasData); noMonthlyChartDataMsg.classList.toggle('hidden', hasData); if (!hasData) { noMonthlyChartDataMsg.textContent = `No wins recorded for ${year}.`; } if(hasData) { const ctx = monthlyWinsCanvas.getContext('2d'); if (!ctx) { console.error("Failed to get monthlyWinsCanvas context"); return; } const labels = monthlyResults.map(r => getMonthName(r.monthIndex)); const dataScores = monthlyResults.map(r => r.winningScore); const yAxisMax = Math.max(3, overallMaxWinningScore + 2); monthlyChartInstance = new Chart(ctx, { type: 'bar', data: { labels: labels, datasets: [{ label: 'Winning Score', data: dataScores, backgroundColor: '#fdc500', borderColor: '#e8b700', borderWidth: 1 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, max: yAxisMax, ticks: { stepSize: 1, precision: 0 } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { title: (tooltipItems) => `${getFullMonthName(tooltipItems[0].dataIndex)} ${year}`, label: (context) => { const index = context.dataIndex; const result = monthlyResults[index]; let winnerLabel = ''; if (!result || result.winnerNames.length === 0) winnerLabel = 'Winner: N/A'; else if (result.winnerNames.length === 1) winnerLabel = `Winner: ${result.winnerNames[0]}`; else winnerLabel = `Tie: ${result.winnerNames.join(', ')}`; const scoreLabel = `Score: ${context.parsed.y}`; return [winnerLabel, scoreLabel]; } } }, datalabels: { display: (context) => context.dataset.data[context.dataIndex] > 0, anchor: 'end', align: 'top', offset: -2, color: '#555', font: { size: 10, weight: 'bold' }, formatter: (value, context) => { const index = context.dataIndex; const result = monthlyResults[index]; if (!result || result.winnerNames.length === 0) { return ''; } else if (result.winnerNames.length === 1) { let name = result.winnerNames[0]; return name.length > 8 ? name.substring(0, 7) + '…' : name; } else { return 'Tie'; } } } } } }); } };
+        const renderDashboard = () => { /* console.log(`renderDashboard - View: ${currentView}, Period: ${currentDashboardPeriod}, Date: ${currentDisplayDate.toDateString()}`); */ dashboardControls.querySelectorAll('button[data-period]').forEach(b => { b.classList.toggle('active', b.dataset.period === currentDashboardPeriod); }); playerViewBtn.classList.toggle('active', currentView === 'player'); monthlyViewBtn.classList.toggle('active', currentView === 'monthly'); winChartContainer.classList.toggle('hidden', currentView !== 'player'); monthlyChartContainer.classList.toggle('hidden', currentView === 'player'); if (currentView === 'player') { renderPlayerWinsChart(currentDashboardPeriod, currentDisplayDate); } else if (currentView === 'monthly') { renderMonthlyBreakdownChart(currentDisplayDate.getFullYear()); } };
+        const renderPlayerWinsChart = (period, displayDate) => { /* console.log(`renderPlayerWinsChart - Period: ${period}, Date: ${displayDate.toDateString()}`); */ if (playerWinChartInstance) { playerWinChartInstance.destroy(); playerWinChartInstance = null; } const { start, end } = getPeriodRange(period, displayDate); let chartTitleText = ''; const today = new Date(); today.setHours(0, 0, 0, 0); const currentPeriodRange = getPeriodRange(period, today); const isCurrentPeriod = currentPeriodRange.start.getTime() === start.getTime(); switch (period) { case 'week': chartTitleText = isCurrentPeriod ? 'Wins This Week' : `Week of ${start.toLocaleDateString()}`; break; case 'month': const monthName = getFullMonthName(displayDate.getMonth()); chartTitleText = isCurrentPeriod ? `Wins This ${monthName}` : `Wins ${monthName} ${displayDate.getFullYear()}`; break; case 'year': chartTitleText = isCurrentPeriod ? `Wins This Year (${displayDate.getFullYear()})` : `Wins ${displayDate.getFullYear()}`; break; } winChartTitle.textContent = chartTitleText; prevPeriodBtn.classList.remove('hidden'); nextPeriodBtn.classList.remove('hidden'); const endOfToday = new Date(); endOfToday.setHours(23, 59, 59, 999); nextPeriodBtn.disabled = end.getTime() >= endOfToday.getTime(); const periodWins = getWinsForPeriodLocal(period, displayDate); const totalWinsCount = periodWins.length; totalPlayerWinsDisplay.textContent = `Total Wins: ${totalWinsCount}`; totalPlayerWinsDisplay.classList.remove('hidden'); const hasPlayers = players.length > 0; const hasData = totalWinsCount > 0; let playerData = []; if (hasPlayers) { const winsByPlayer = players.reduce((acc, p) => { acc[p.id] = { name: p.name, count: 0 }; return acc; }, {}); periodWins.forEach(w => { if (w.playerId && winsByPlayer[w.playerId]) { winsByPlayer[w.playerId].count++; } }); playerData = Object.values(winsByPlayer); playerData.sort((a, b) => a.name.localeCompare(b.name)); } const showChart = hasPlayers && hasData; playerWinCanvas.classList.toggle('hidden', !showChart); noChartDataMsg.classList.toggle('hidden', showChart); if (!hasPlayers) { noChartDataMsg.textContent = "Add players to see statistics."; totalPlayerWinsDisplay.classList.add('hidden'); } else if (!hasData) { noChartDataMsg.textContent = "No wins recorded for this period."; } if (showChart) { const ctx = playerWinCanvas.getContext('2d'); if (!ctx) { console.error("Failed to get playerWinCanvas context"); return; } const labels = playerData.map(p => p.name); const dataCounts = playerData.map(p => p.count); playerWinChartInstance = new Chart(ctx, { type: 'bar', data: { labels: labels, datasets: [{ label: 'Wins', data: dataCounts, backgroundColor: '#219ebc', borderColor: '#1a7f9a', borderWidth: 1 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(c) { let l = c.dataset.label || ''; if (l) { l += ': '; } if (c.parsed.y !== null) { l += c.parsed.y + (c.parsed.y === 1 ? ' win' : ' wins'); } return l; } } } } } }); } };
+        const renderMonthlyBreakdownChart = (year) => { /* console.log(`renderMonthlyBreakdownChart - Year: ${year}`); */ if (monthlyChartInstance) { monthlyChartInstance.destroy(); monthlyChartInstance = null; } monthlyChartTitle.textContent = `Monthly Winners for ${year}`; nextYearBtn.disabled = year >= new Date().getFullYear(); const yearWins = getWinsForYearLocal(year); const totalWinsCount = yearWins.length; const hasData = totalWinsCount > 0; totalMonthlyWinsDisplay.textContent = `Total Wins: ${totalWinsCount}`; totalMonthlyWinsDisplay.classList.remove('hidden'); let monthlyResults = []; let overallMaxWinningScore = 0; if(hasData) { const monthlyPlayerWins = {}; yearWins.forEach(win => { if (win.timestamp && typeof win.timestamp.toDate === 'function' && win.playerId) { const mI = win.timestamp.toDate().getMonth(); monthlyPlayerWins[mI] = monthlyPlayerWins[mI] || {}; monthlyPlayerWins[mI][win.playerId] = (monthlyPlayerWins[mI][win.playerId] || 0) + 1; } }); for (let i = 0; i < 12; i++) { const monthData = monthlyPlayerWins[i]; let winners = []; let maxScore = 0; if (monthData && Object.keys(monthData).length > 0) { maxScore = Math.max(...Object.values(monthData)); if (maxScore > overallMaxWinningScore) { overallMaxWinningScore = maxScore; } winners = Object.entries(monthData) .filter(([_, score]) => score === maxScore) .map(([playerId, _]) => sanitizeHTML(players.find(p => p.id === playerId)?.name ?? 'Unknown')); } monthlyResults.push({ monthIndex: i, winnerNames: winners, winningScore: maxScore }); } } else { for (let i = 0; i < 12; i++) { monthlyResults.push({ monthIndex: i, winnerNames: [], winningScore: 0 }); } } monthlyWinsCanvas.classList.toggle('hidden', !hasData); noMonthlyChartDataMsg.classList.toggle('hidden', hasData); if (!hasData) { noMonthlyChartDataMsg.textContent = `No wins recorded for ${year}.`; } if(hasData) { const ctx = monthlyWinsCanvas.getContext('2d'); if (!ctx) { console.error("Failed to get monthlyWinsCanvas context"); return; } const labels = monthlyResults.map(r => getMonthName(r.monthIndex)); const dataScores = monthlyResults.map(r => r.winningScore); const yAxisMax = Math.max(3, overallMaxWinningScore + 2); monthlyChartInstance = new Chart(ctx, { type: 'bar', data: { labels: labels, datasets: [{ label: 'Winning Score', data: dataScores, backgroundColor: '#fdc500', borderColor: '#e8b700', borderWidth: 1 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, max: yAxisMax, ticks: { stepSize: 1, precision: 0 } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { title: (tooltipItems) => `${getFullMonthName(tooltipItems[0].dataIndex)} ${year}`, label: (context) => { const index = context.dataIndex; const result = monthlyResults[index]; let winnerLabel = ''; if (!result || result.winnerNames.length === 0) winnerLabel = 'Winner: N/A'; else if (result.winnerNames.length === 1) winnerLabel = `Winner: ${result.winnerNames[0]}`; else winnerLabel = `Tie: ${result.winnerNames.join(', ')}`; const scoreLabel = `Score: ${context.parsed.y}`; return [winnerLabel, scoreLabel]; } } }, datalabels: { display: (context) => context.dataset.data[context.dataIndex] > 0, anchor: 'end', align: 'top', offset: -2, color: '#555', font: { size: 10, weight: 'bold' }, formatter: (value, context) => { const index = context.dataIndex; const result = monthlyResults[index]; if (!result || result.winnerNames.length === 0) { return ''; } else if (result.winnerNames.length === 1) { let name = result.winnerNames[0]; return name.length > 8 ? name.substring(0, 7) + '…' : name; } else { return 'Tie'; } } } } } }); } };
         const renderApp = () => { renderPlayerManagementList(); renderScoreTrackingList(); renderTodaysWinsList(); renderDashboard(); };
+
 
         // --- Timer Functions ---
         const formatTimerTime = (totalSeconds) => { const minutes = Math.floor(totalSeconds / 60); const seconds = totalSeconds % 60; return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`; };
         const updateTimerDisplay = () => { timerDisplay.textContent = formatTimerTime(timerRemainingSeconds); };
         const updateTimerFill = () => { const percentage = (timerRemainingSeconds / TIMER_DURATION_SECONDS) * 100; timerFill.style.height = `${percentage}%`; };
 
-        // NEW: Function to unlock audio context on user interaction
+        // Audio Unlock Function (Revised)
         const unlockAudioContext = () => {
-            if (audioUnlocked || !timerAudio) return; // Only run once or if audio exists
-            // Play and immediately pause/reset. This often satisfies browser restrictions.
+            // No need to check audioUnlocked flag here, as we might need to re-unlock
+            if (!timerAudio || timerAudio.readyState < 1) { // Ensure audio element exists and potentially loaded
+                 console.warn("Audio element not ready for unlock attempt.");
+                 return;
+            }
+            // Play and immediately pause/reset.
             const playPromise = timerAudio.play();
             if (playPromise !== undefined) {
                 playPromise.then(() => {
                     timerAudio.pause();
-                    timerAudio.currentTime = 0;
-                    audioUnlocked = true;
-                    console.log("Audio context unlocked by user interaction.");
+                    // Don't reset currentTime here if we want the beep to play from start later
+                    // timerAudio.currentTime = 0;
+                    if (!audioUnlocked) {
+                         console.log("Audio context unlocked by user interaction.");
+                         audioUnlocked = true; // Set flag only on first successful unlock
+                    } else {
+                         console.log("Audio context potentially re-activated.");
+                    }
                 }).catch(error => {
-                    // Ignore errors (like playback already paused), but log for debugging
-                    // Don't set unlocked flag if it fails significantly
-                    console.warn("Audio unlock attempt failed/interrupted:", error.name, error.message);
-                    // audioUnlocked = false; // Keep it false if unlock truly failed
+                     // Ignore 'AbortError' which can happen if pause() interrupts play() quickly
+                     if (error.name !== 'AbortError') {
+                         console.warn("Audio unlock/reactivation attempt failed:", error.name, error.message);
+                         audioUnlocked = false; // Consider it locked if a real error occurs
+                     } else {
+                         // If it's just AbortError, the unlock likely worked fine
+                          if (!audioUnlocked) {
+                             console.log("Audio context unlocked (AbortError ignored).");
+                             audioUnlocked = true;
+                          } else {
+                             console.log("Audio context potentially re-activated (AbortError ignored).");
+                          }
+                     }
                 });
-            } else {
-                 // Fallback for browsers not returning a promise (less common now)
-                 try {
-                     timerAudio.play();
-                     timerAudio.pause();
-                     timerAudio.currentTime = 0;
-                     audioUnlocked = true;
-                     console.log("Audio context unlocked (no promise).");
-                 } catch (e) {
-                     console.warn("Audio unlock failed (no promise):", e.name, e.message);
-                 }
             }
+            // No fallback needed here as we call this from user interaction context
         };
 
-        // UPDATED: Refined playBeepSound
+        // Play Beep Sound Function (Keep previous robust version)
         const playBeepSound = () => {
             if (!timerAudio) return;
-            console.log("Attempting to play beep sound...");
-            timerAudio.currentTime = 0; // Reset playback position first
-            const playPromise = timerAudio.play();
+            console.log(`Attempting to play beep sound (Audio Unlocked: ${audioUnlocked}, Ready State: ${timerAudio.readyState})`);
 
-            if (playPromise !== undefined) {
-                playPromise.then(() => {
-                    console.log("Beep sound played successfully.");
-                    // Playback started
-                }).catch(error => {
-                    console.error("Timer audio playback failed:", error.name, error.message);
-                    // Log error, maybe show a subtle visual cue if sound fails?
-                    // Auto-unlock might have failed or been revoked.
-                    audioUnlocked = false; // Reset flag maybe? Or just warn user.
-                });
-            } else {
-                // Fallback for older browsers or specific scenarios
-                try {
-                     timerAudio.play();
-                     console.log("Beep sound played (no promise).");
-                } catch (e) {
-                     console.error("Timer audio playback failed (no promise):", e.name, e.message);
-                     audioUnlocked = false;
-                }
+            if (!audioUnlocked) {
+                 console.warn("Audio context is not unlocked. Beep may fail.");
+                 // Optional: Attempt a last-ditch unlock here? Risky as it's not user-initiated.
+                 // unlockAudioContext(); // Probably won't work reliably here.
             }
+
+            // Ensure audio is ready to play
+             if (timerAudio.readyState >= 2) { // HAVE_CURRENT_DATA or more
+                 timerAudio.currentTime = 0; // Reset playback position first
+                 const playPromise = timerAudio.play();
+
+                 if (playPromise !== undefined) {
+                     playPromise.then(() => {
+                         console.log("Beep sound played successfully.");
+                     }).catch(error => {
+                         console.error("Timer audio playback failed:", error.name, error.message);
+                         // If it fails here, the context might have been suspended again.
+                         audioUnlocked = false; // Mark as potentially locked again
+                     });
+                 }
+             } else {
+                 console.warn("Audio not ready to play (readyState < 2). Attempting to load.");
+                 timerAudio.load(); // Try to trigger loading
+                 // We could try playing again after a short delay, but it gets complex.
+                 // Best effort is to rely on initial unlock + visibilitychange unlock.
+             }
         };
 
+        // Timer Tick function (using setTimeout)
+        const timerTick = () => {
+             // Check if timer should still be running
+             if (!isTimerVisible) {
+                 console.log("Timer tick called but timer is hidden. Stopping.");
+                 stopTimer(); // Ensure cleanup if somehow called while hidden
+                 return;
+             }
 
-        const stopTimerInterval = () => {
-            if (timerInterval) {
-                clearInterval(timerInterval);
-                timerInterval = null;
-                console.log("Timer interval stopped.");
+             timerRemainingSeconds--;
+             // console.log(`Timer Tick: ${timerRemainingSeconds}s remaining`); // Optional: Debug log
+
+             if (timerRemainingSeconds < 0) {
+                 console.log("Timer reached 0 - Attempting Beep"); // Log before playing
+                 playBeepSound();
+                 timerRemainingSeconds = TIMER_DURATION_SECONDS; // Reset for next cycle
+                 // NOTE: The timer visually resets here. If you want it to STOP at 0,
+                 // you'd call stopTimer() here instead of resetting.
+                 // The current logic assumes it keeps running/cycling until manually stopped or hidden.
+             }
+
+             updateTimerDisplay();
+             updateTimerFill();
+
+             // Schedule the next tick
+             timerTimeoutId = setTimeout(timerTick, 1000);
+        };
+
+        // Function to start the timer using chained setTimeout
+        const startTimer = () => {
+            stopTimer(); // Clear any existing timer first
+            console.log("Starting timer (using setTimeout chain)...");
+            isTimerVisible = true; // Mark as visible when started
+
+            // Make sure initial state is correct before first tick
+            timerRemainingSeconds = (timerRemainingSeconds > 0 && timerRemainingSeconds <= TIMER_DURATION_SECONDS)
+                 ? timerRemainingSeconds // Resume if already started (e.g. after NEXT)
+                 : TIMER_DURATION_SECONDS; // Start fresh otherwise
+
+            updateTimerDisplay();
+            updateTimerFill();
+
+            // Start the first tick
+            timerTimeoutId = setTimeout(timerTick, 1000);
+        };
+
+        // Function to stop the timer
+        const stopTimer = () => {
+            if (timerTimeoutId) {
+                clearTimeout(timerTimeoutId);
+                timerTimeoutId = null;
+                console.log("Timer stopped (cleared timeout).");
             }
+             // Note: We don't set isTimerVisible = false here, that's done by hideTimer()
         };
 
-        const startTimerInterval = () => {
-            stopTimerInterval(); // Ensure any existing interval is cleared
-            console.log("Starting timer interval...");
-            timerInterval = setInterval(() => {
-                timerRemainingSeconds--;
-                if (timerRemainingSeconds < 0) {
-                    console.log("Timer reached 0.");
-                    playBeepSound(); // Play sound when timer hits zero
-                    timerRemainingSeconds = TIMER_DURATION_SECONDS; // Reset for next cycle (if needed, though NEXT button usually resets)
-                }
-                updateTimerDisplay();
-                updateTimerFill();
-            }, 1000); // Update every second
-        };
 
         // UPDATED: Call unlockAudioContext on "NEXT" button press
         const handleNextTimerClick = () => {
             console.log("Next Timer button clicked");
             unlockAudioContext(); // Ensure audio is ready on this interaction
-            stopTimerInterval(); // Stop current interval before resetting
-            timerRemainingSeconds = TIMER_DURATION_SECONDS;
+            stopTimer(); // Stop current timer chain
+            timerRemainingSeconds = TIMER_DURATION_SECONDS; // Reset time
             updateTimerDisplay();
             updateTimerFill();
-            playBeepSound(); // Play immediately on NEXT click
-            startTimerInterval(); // Start the countdown again
+            // Play immediately on NEXT click
+            // Small delay to potentially allow UI update before sound
+             setTimeout(() => {
+                playBeepSound();
+             }, 50);
+            startTimer(); // Start the countdown again
         };
 
-        // --- Wake Lock Functions ---
+        // --- Wake Lock Functions (Keep existing) ---
         const requestWakeLock = async () => { if ('wakeLock' in navigator) { try { wakeLockSentinel = await navigator.wakeLock.request('screen'); console.log('Screen Wake Lock requested successfully.'); wakeLockSentinel.addEventListener('release', () => { console.log('Screen Wake Lock was released'); if (isTimerVisible) { console.warn('Wake Lock released unexpectedly while timer visible.'); /* Consider re-requesting? */ } wakeLockSentinel = null; }); } catch (err) { console.error(`Wake Lock Request Failed: ${err.name}, ${err.message}`); wakeLockSentinel = null; } } else { console.warn('Screen Wake Lock API not supported.'); } };
         const releaseWakeLock = async () => { if (wakeLockSentinel !== null && typeof wakeLockSentinel.release === 'function') { try { await wakeLockSentinel.release(); wakeLockSentinel = null; console.log('Screen Wake Lock released.'); } catch (err) { console.error(`Failed to release Wake Lock: ${err.name}, ${err.message}`); wakeLockSentinel = null; } } };
 
-        // --- Timer Show/Hide (Modified for Wake Lock & Audio Unlock) ---
+        // --- Timer Show/Hide (Modified for setTimeout and Audio Unlock) ---
         const showTimer = async () => {
-            if (isTimerVisible) return;
+            if (isTimerVisible) return; // Already visible
             console.log("Showing timer...");
-            unlockAudioContext(); // Attempt to unlock audio on user interaction (showing timer)
-            isTimerVisible = true;
+
+            // Attempt to unlock audio on the interaction that shows the timer
+            unlockAudioContext();
+
             timerOverlay.style.display = 'flex';
             toggleTimerBtn.textContent = '⏱️ Hide Timer';
             toggleTimerBtn.setAttribute('aria-label', 'Hide Timer');
-            await requestWakeLock(); // Request wake lock AFTER showing overlay
-            timerRemainingSeconds = TIMER_DURATION_SECONDS;
-            updateTimerDisplay();
-            updateTimerFill();
-            startTimerInterval();
+
+            await requestWakeLock(); // Request wake lock
+
+            // Don't reset timerRemainingSeconds here, startTimer() handles it
+            // timerRemainingSeconds = TIMER_DURATION_SECONDS;
+
+            startTimer(); // This now sets isTimerVisible = true and starts the chain
         };
 
         const hideTimer = async () => {
-            if (!isTimerVisible) return;
+            if (!isTimerVisible) return; // Already hidden
             console.log("Hiding timer...");
-            isTimerVisible = false;
+            isTimerVisible = false; // Mark as hidden FIRST
+            stopTimer(); // Stop the timer chain
+
             timerOverlay.style.display = 'none';
             toggleTimerBtn.textContent = '⏱️ Timer';
             toggleTimerBtn.setAttribute('aria-label', 'Show Timer');
-            stopTimerInterval(); // Stop interval FIRST
+
             await releaseWakeLock(); // Release wake lock
 
             // Pause and reset audio state
@@ -554,68 +605,87 @@
                  timerAudio.currentTime = 0;
             }
 
-            // Reset visual state after stopping
+            // Reset visual state and remaining time state AFTER stopping
             timerFill.style.height = '100%';
-            timerRemainingSeconds = TIMER_DURATION_SECONDS; // Reset remaining time state
-            updateTimerDisplay(); // Update display to show full time
+            timerRemainingSeconds = TIMER_DURATION_SECONDS;
+            updateTimerDisplay();
         };
 
 
         // --- Event Listeners ---
 
-        // Player Management Listeners
+        // Player Management Listeners (Keep existing)
         togglePlayerManagementBtn.addEventListener('click', () => { playerManagementSection.classList.toggle('hidden'); const i = playerManagementSection.classList.contains('hidden'); togglePlayerManagementBtn.setAttribute('aria-expanded',!i); togglePlayerManagementBtn.textContent = i?'⚙️ Manage':'🔽 Close'; });
         addPlayerBtn.addEventListener('click', () => addPlayer(newPlayerNameInput.value));
         newPlayerNameInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') { e.preventDefault(); addPlayer(newPlayerNameInput.value); } addPlayerError.textContent = ""; });
         playerListManagementUl.addEventListener('click', (e) => { const t = e.target; const pE = t.closest('.player-management-entry'); if (!pE) return; const pId = pE.dataset.playerId; if (t.classList.contains('delete-player-btn')) { deletePlayer(pId); } else if (t.classList.contains('rename-btn')) { playerListManagementUl.querySelectorAll('.rename-controls:not(.hidden)').forEach(c => { const en = c.closest('.player-management-entry'); if (en && en !== pE) { en.querySelector('.rename-controls').classList.add('hidden'); en.querySelector('.player-name-display').classList.remove('hidden'); en.querySelector('.action-buttons').classList.remove('hidden'); } }); pE.querySelector('.player-name-display').classList.add('hidden'); pE.querySelector('.action-buttons').classList.add('hidden'); const rC = pE.querySelector('.rename-controls'); rC.classList.remove('hidden'); const i = rC.querySelector('.rename-input'); i.focus(); i.select(); } else if (t.classList.contains('save-rename-btn')) { const i = pE.querySelector('.rename-input'); renamePlayer(pId, i.value); } else if (t.classList.contains('cancel-rename-btn')) { const oN = pE.querySelector('.player-name-display').textContent; pE.querySelector('.rename-input').value = oN; pE.querySelector('.rename-controls').classList.add('hidden'); pE.querySelector('.player-name-display').classList.remove('hidden'); pE.querySelector('.action-buttons').classList.remove('hidden'); } });
         playerListManagementUl.addEventListener('keypress', (e) => { if (e.key === 'Enter' && e.target.classList.contains('rename-input')) { e.preventDefault(); const pE = e.target.closest('.player-management-entry'); if (pE) renamePlayer(pE.dataset.playerId, e.target.value); } });
 
-        // Score Tracking / Today's Wins Listeners
+        // Score Tracking / Today's Wins Listeners (Keep existing)
         scoreTrackingListUl.addEventListener('click', (e) => { if (e.target.classList.contains('add-win-btn') && !e.target.disabled) { recordWin(e.target.dataset.playerId); } });
         todaysWinsListUl.addEventListener('click', (e) => { if (e.target.classList.contains('delete-win-btn') && !e.target.disabled) { const wL = e.target.closest('li'); if (wL?.dataset.winId) deleteWin(wL.dataset.winId); } });
 
-        // Dashboard Controls Listener
-        dashboardControls.addEventListener('click', (e) => { if (e.target.tagName === 'BUTTON' && e.target.dataset.period) { const newlySelectedPeriod = e.target.dataset.period; console.log(`Dashboard Control Clicked: ${newlySelectedPeriod}`); currentDisplayDate = new Date(); console.log(`Date RESET to: ${currentDisplayDate.toDateString()}`); currentDashboardPeriod = newlySelectedPeriod; currentView = 'player'; renderDashboard(); } });
+        // Dashboard Controls Listener (Keep existing)
+        dashboardControls.addEventListener('click', (e) => { if (e.target.tagName === 'BUTTON' && e.target.dataset.period) { const newlySelectedPeriod = e.target.dataset.period; console.log(`Dashboard Control Clicked: ${newlySelectedPeriod}`); currentDisplayDate = new Date(); /* console.log(`Date RESET to: ${currentDisplayDate.toDateString()}`); */ currentDashboardPeriod = newlySelectedPeriod; currentView = 'player'; renderDashboard(); } });
 
-        // View Toggle Button Listeners
-        playerViewBtn.addEventListener('click', () => { console.log("Player View Button Clicked"); if (currentView !== 'player') { currentView = 'player'; renderDashboard(); } });
-        monthlyViewBtn.addEventListener('click', () => { console.log("Monthly View Button Clicked"); if (currentView !== 'monthly') { currentView = 'monthly'; renderDashboard(); } });
+        // View Toggle Button Listeners (Keep existing)
+        playerViewBtn.addEventListener('click', () => { /* console.log("Player View Button Clicked"); */ if (currentView !== 'player') { currentView = 'player'; renderDashboard(); } });
+        monthlyViewBtn.addEventListener('click', () => { /* console.log("Monthly View Button Clicked"); */ if (currentView !== 'monthly') { currentView = 'monthly'; renderDashboard(); } });
 
-        // Period Navigation Button Listeners
-        prevPeriodBtn.addEventListener('click', () => { const oldDate = new Date(currentDisplayDate); if (currentDashboardPeriod === 'week') { currentDisplayDate.setDate(currentDisplayDate.getDate() - 7); } else if (currentDashboardPeriod === 'month') { currentDisplayDate.setMonth(currentDisplayDate.getMonth() - 1); } else if (currentDashboardPeriod === 'year') { currentDisplayDate.setFullYear(currentDisplayDate.getFullYear() - 1); } console.log(`Prev Period Clicked. Old: ${oldDate.toDateString()}, New: ${currentDisplayDate.toDateString()}`); renderDashboard(); });
-        nextPeriodBtn.addEventListener('click', () => { const oldDate = new Date(currentDisplayDate); if (currentDashboardPeriod === 'week') { currentDisplayDate.setDate(currentDisplayDate.getDate() + 7); } else if (currentDashboardPeriod === 'month') { const tempDate = new Date(currentDisplayDate); tempDate.setMonth(tempDate.getMonth() + 1); const today = new Date(); if (tempDate.getFullYear() < today.getFullYear() || (tempDate.getFullYear() === today.getFullYear() && tempDate.getMonth() <= today.getMonth())) { currentDisplayDate.setMonth(currentDisplayDate.getMonth() + 1); } else { console.log("Next month navigation blocked."); nextPeriodBtn.disabled = true; return; } } else if (currentDashboardPeriod === 'year') { const nextYear = currentDisplayDate.getFullYear() + 1; if (nextYear <= new Date().getFullYear()) { currentDisplayDate.setFullYear(nextYear); } else { console.log("Next year navigation blocked."); nextPeriodBtn.disabled = true; return; } } console.log(`Next Period Clicked. Old: ${oldDate.toDateString()}, New: ${currentDisplayDate.toDateString()}`); renderDashboard(); });
-        prevYearBtn.addEventListener('click', () => { const oldDate = new Date(currentDisplayDate); currentDisplayDate.setFullYear(currentDisplayDate.getFullYear() - 1); console.log(`Prev Year Clicked. Old: ${oldDate.toDateString()}, New: ${currentDisplayDate.toDateString()}`); renderDashboard(); });
-        nextYearBtn.addEventListener('click', () => { const oldDate = new Date(currentDisplayDate); const nextYear = currentDisplayDate.getFullYear() + 1; if (nextYear <= new Date().getFullYear()) { currentDisplayDate.setFullYear(nextYear); console.log(`Next Year Clicked. Old: ${oldDate.toDateString()}, New: ${currentDisplayDate.toDateString()}`); renderDashboard(); } else { console.log("Next year navigation blocked."); nextYearBtn.disabled = true; } });
+        // Period Navigation Button Listeners (Keep existing)
+        prevPeriodBtn.addEventListener('click', () => { const oldDate = new Date(currentDisplayDate); if (currentDashboardPeriod === 'week') { currentDisplayDate.setDate(currentDisplayDate.getDate() - 7); } else if (currentDashboardPeriod === 'month') { currentDisplayDate.setMonth(currentDisplayDate.getMonth() - 1); } else if (currentDashboardPeriod === 'year') { currentDisplayDate.setFullYear(currentDisplayDate.getFullYear() - 1); } /* console.log(`Prev Period Clicked. Old: ${oldDate.toDateString()}, New: ${currentDisplayDate.toDateString()}`); */ renderDashboard(); });
+        nextPeriodBtn.addEventListener('click', () => { const oldDate = new Date(currentDisplayDate); if (currentDashboardPeriod === 'week') { currentDisplayDate.setDate(currentDisplayDate.getDate() + 7); } else if (currentDashboardPeriod === 'month') { const tempDate = new Date(currentDisplayDate); tempDate.setMonth(tempDate.getMonth() + 1); const today = new Date(); if (tempDate.getFullYear() < today.getFullYear() || (tempDate.getFullYear() === today.getFullYear() && tempDate.getMonth() <= today.getMonth())) { currentDisplayDate.setMonth(currentDisplayDate.getMonth() + 1); } else { console.log("Next month navigation blocked."); nextPeriodBtn.disabled = true; return; } } else if (currentDashboardPeriod === 'year') { const nextYear = currentDisplayDate.getFullYear() + 1; if (nextYear <= new Date().getFullYear()) { currentDisplayDate.setFullYear(nextYear); } else { console.log("Next year navigation blocked."); nextPeriodBtn.disabled = true; return; } } /* console.log(`Next Period Clicked. Old: ${oldDate.toDateString()}, New: ${currentDisplayDate.toDateString()}`); */ renderDashboard(); });
+        prevYearBtn.addEventListener('click', () => { const oldDate = new Date(currentDisplayDate); currentDisplayDate.setFullYear(currentDisplayDate.getFullYear() - 1); /* console.log(`Prev Year Clicked. Old: ${oldDate.toDateString()}, New: ${currentDisplayDate.toDateString()}`); */ renderDashboard(); });
+        nextYearBtn.addEventListener('click', () => { const oldDate = new Date(currentDisplayDate); const nextYear = currentDisplayDate.getFullYear() + 1; if (nextYear <= new Date().getFullYear()) { currentDisplayDate.setFullYear(nextYear); /* console.log(`Next Year Clicked. Old: ${oldDate.toDateString()}, New: ${currentDisplayDate.toDateString()}`); */ renderDashboard(); } else { console.log("Next year navigation blocked."); nextYearBtn.disabled = true; } });
 
         // Timer Event Listeners
         toggleTimerBtn.addEventListener('click', () => { if (isTimerVisible) { hideTimer(); } else { showTimer(); } });
         hideTimerBtn.addEventListener('click', hideTimer);
         nextTimerBtn.addEventListener('click', handleNextTimerClick);
 
-        // Visibility Change Listener for Wake Lock
-        // Re-request wake lock if page becomes visible and timer SHOULD be running
+        // Visibility Change Listener (Critical for Mobile)
          document.addEventListener('visibilitychange', async () => {
              console.log(`Visibility changed to: ${document.visibilityState}`);
-             if (document.visibilityState === 'visible' && isTimerVisible && !wakeLockSentinel) {
-                 console.log("Page visible, timer active, but no wake lock. Re-requesting wake lock.");
-                 await requestWakeLock();
+
+             if (document.visibilityState === 'visible') {
+                 // --- Re-acquire Wake Lock if necessary ---
+                 if (isTimerVisible && !wakeLockSentinel) {
+                     console.log("Page visible, timer active, but no wake lock. Re-requesting wake lock.");
+                     await requestWakeLock();
+                 }
+                 // --- Attempt to re-unlock/re-activate Audio Context ---
+                 // This is crucial if the browser suspended it while backgrounded
+                 if (isTimerVisible) { // Only if timer is supposed to be running
+                      console.log("Page visible, attempting to re-activate audio context.");
+                      unlockAudioContext();
+                 }
+                 // --- Optional: Resume Timer if stopped by extreme throttling? ---
+                 // If the timeout chain was completely broken, we might need to restart it.
+                 // Check if the timer *should* be running but isn't (no timeout ID)
+                 // if (isTimerVisible && !timerTimeoutId) {
+                 //     console.warn("Timer was visible but timeout loop was broken. Restarting tick.");
+                 //     startTimer(); // Or maybe just timerTick() if state is preserved? Careful here.
+                 // }
+
+             } else { // document.visibilityState === 'hidden'
+                // --- Optional: Release Wake Lock proactively? ---
+                // Browsers usually handle this, but explicit release might be cleaner.
+                // console.log("Page hidden, releasing wake lock proactively.");
+                // await releaseWakeLock(); // Be careful, might interfere if quickly switching back
+
+                // --- Audio context will likely be suspended by the browser ---
+                console.log("Page hidden, audio context likely to be suspended.");
              }
-             // Optional: Attempt to re-unlock audio if needed, although primary unlock should happen on show/next
-             // if (document.visibilityState === 'visible' && isTimerVisible && !audioUnlocked) {
-             //     console.log("Page visible, timer active, audio might be locked. Attempting unlock.");
-             //     unlockAudioContext();
-             // }
          });
 
         // --- Initial Load ---
         (async () => {
             if (typeof ChartDataLabels !== 'undefined') { Chart.register(ChartDataLabels); } else { console.error("ChartDataLabels plugin not loaded!"); }
             currentView = 'player';
-            currentDashboardPeriod = 'month'; // Default to month
+            currentDashboardPeriod = 'month';
             currentDisplayDate = new Date();
             updateTimerDisplay(); // Set initial timer display
-            // Ensure audio is loaded, although preload="auto" should handle this
-            timerAudio.load();
+            timerAudio.load(); // Ensure audio attempts to load
             await loadData(); // Load data and trigger initial renderApp()
         })();
 
