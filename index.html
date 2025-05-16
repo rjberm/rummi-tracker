@@ -148,8 +148,9 @@
                 <h4>Timer Alarm Sound</h4>
                 <label for="audioSourceSelect">Select or Add Sound:</label>
                 <select id="audioSourceSelect"></select>
+                 <div id="audioUrlStatus"></div> <!-- Moved status here to be always visible -->
 
-                <div id="customUrlGroup" class="hidden">
+                <div id="customUrlGroup" class="hidden"> <!-- This group will be shown/hidden -->
                     <label for="customAudioShortNameInput">Short Name (Required):</label>
                     <input type="text" id="customAudioShortNameInput" placeholder="e.g., My Awesome Beep">
                     <label for="customAudioUrlInput">Custom Audio URL:</label>
@@ -157,7 +158,6 @@
                     <button id="saveCustomAudioBtn">Save & Use This Sound</button>
                 </div>
                 <button id="removeFavoriteBtn" class="secondary hidden">Remove Selected Sound</button>
-                <div id="audioUrlStatus"></div>
             </div>
         </section>
 
@@ -188,6 +188,7 @@
           appId: "1:853316153385:web:db1fc1304b54a198a82c38", // Replace!
           measurementId: "G-ZDBF73CFXS" // Optional: Replace!
         };
+
 
         let app, db;
         try {
@@ -222,7 +223,7 @@
         let audioUnlocked = false;
         let wakeLockSentinel = null;
 
-        const DEFAULT_AUDIO_URL = "https://www.dropbox.com/scl/fi/540eent9p1es21f4ep2ix/trompo_1-edit.mp3?rlkey=m0hhk27s8892ow6eyogpqxm00&st=zi9nt3i9&dl=1";
+        const DEFAULT_AUDIO_URL = "https://www.dropbox.com/scl/fi/540eent9p1es21f4ep2ix/trompo_1-edit.mp3?rlkey=m0hhk27s8892ow6eyogpqxm00&st=zi9nt3i9&dl=1"; // Ensure this ends in dl=1
         
         const AUDIO_PREFERENCES_COLLECTION = 'audioPreferences';
         const APP_CONFIG_COLLECTION = 'appConfiguration';
@@ -307,7 +308,7 @@
         async function saveAudioPreferenceToFirebase(name, url) {
             if (!db) return null;
             name = name.trim();
-            url = url.trim();
+            url = url.trim(); // URL is already potentially corrected for Dropbox before this function
 
             const existingByName = audioPreferences.find(p => p.name.toLowerCase() === name.toLowerCase());
             if (existingByName) {
@@ -326,7 +327,6 @@
                     url: url,
                     createdAt: serverTimestamp()
                 });
-                // For local cache, use an approximate timestamp or fetch the doc again for exact serverTimestamp
                 const newPref = { id: docRef.id, name, url, createdAt: Timestamp.now() }; 
                 audioPreferences.push(newPref);
                 audioPreferences.sort((a, b) => a.name.localeCompare(b.name));
@@ -381,12 +381,17 @@
             dom.audioSourceSelect.add(customNewOption);
 
             if (activeId !== "default" && !audioPreferences.some(p => p.id === activeId)) {
-                dom.audioSourceSelect.value = "custom_new"; // If active ID is stale (e.g., deleted)
+                // If active ID is stale (e.g., deleted), default to "default" and update DB
+                console.warn(`Stale activeAudioPreferenceId '${activeId}' found. Reverting to default.`);
+                currentActiveAudioPreferenceId = "default";
+                setActiveAudioPreferenceIdInFirebase("default"); // Update DB as well
+                dom.audioSourceSelect.value = "default";
             } else {
                 dom.audioSourceSelect.value = activeId || "default";
             }
         };
 
+        // --- MODIFIED updateCustomAudioUI ---
         const updateCustomAudioUI = () => {
             const selectedValue = dom.audioSourceSelect.value;
 
@@ -397,32 +402,30 @@
                 dom.customAudioShortNameInput.readOnly = false;
                 dom.customAudioUrlInput.readOnly = false;
                 dom.saveCustomAudioBtn.classList.remove('hidden');
-                dom.saveCustomAudioBtn.textContent = "Save & Use This Sound";
                 dom.removeFavoriteBtn.classList.add('hidden');
-            } else if (selectedValue === "default") {
+                dom.customAudioShortNameInput.focus();
+            } else { // Covers "default" or an existing saved sound
                 dom.customUrlGroup.classList.add('hidden');
+                dom.saveCustomAudioBtn.classList.add('hidden');
+                // Clear input fields when custom group is hidden
                 dom.customAudioShortNameInput.value = "";
                 dom.customAudioUrlInput.value = "";
-                dom.saveCustomAudioBtn.classList.add('hidden');
-                dom.removeFavoriteBtn.classList.add('hidden');
-            } else { 
-                const selectedPref = audioPreferences.find(p => p.id === selectedValue);
-                if (selectedPref) {
-                    dom.customUrlGroup.classList.remove('hidden');
-                    dom.customAudioShortNameInput.value = selectedPref.name;
-                    dom.customAudioUrlInput.value = selectedPref.url;
-                    dom.customAudioShortNameInput.readOnly = true;
-                    dom.customAudioUrlInput.readOnly = true;
-                    dom.saveCustomAudioBtn.classList.add('hidden');
-                    dom.removeFavoriteBtn.classList.remove('hidden');
-                } else { // Should not happen if list is populated correctly and stale IDs handled
-                    dom.customUrlGroup.classList.add('hidden');
-                    dom.saveCustomAudioBtn.classList.add('hidden');
+
+                if (selectedValue === "default") {
                     dom.removeFavoriteBtn.classList.add('hidden');
-                    console.warn("Selected audio preference ID not found in UI update:", selectedValue);
+                } else {
+                    // It's an existing saved sound, so "Remove" button should be visible
+                    const selectedPref = audioPreferences.find(p => p.id === selectedValue);
+                    if (selectedPref) {
+                        dom.removeFavoriteBtn.classList.remove('hidden');
+                    } else { // Should ideally not happen if populate and activeId are correct
+                        dom.removeFavoriteBtn.classList.add('hidden');
+                    }
                 }
             }
         };
+        // --- END MODIFIED updateCustomAudioUI ---
+
 
         const applyAudioChoice = async (preferenceId) => {
             let urlToLoad;
@@ -438,22 +441,22 @@
                     urlToLoad = pref.url;
                     statusName = utils.sanitizeHTML(pref.name);
                 } else {
-                    console.warn(`Audio preference ID "${preferenceId}" not found. Reverting to default.`);
+                    console.warn(`Audio preference ID "${preferenceId}" not found during apply. Reverting to default.`);
                     urlToLoad = DEFAULT_AUDIO_URL;
                     statusName = "Default Sound";
-                    preferenceId = "default";
+                    preferenceId = "default"; // Ensure currentActiveAudioPreferenceId is corrected
                 }
             }
 
             if (dom.timerAudio.src !== urlToLoad) {
                 dom.timerAudio.src = urlToLoad;
                 dom.timerAudio.load();
-            } else if (!dom.timerAudio.src && urlToLoad) { // If src was initially empty
+            } else if ((!dom.timerAudio.src || dom.timerAudio.src === window.location.href) && urlToLoad) {
                 dom.timerAudio.src = urlToLoad;
                 dom.timerAudio.load();
             }
-
-            await setActiveAudioPreferenceIdInFirebase(preferenceId);
+            
+            await setActiveAudioPreferenceIdInFirebase(preferenceId); // This also updates currentActiveAudioPreferenceId
             dom.audioUrlStatus.innerHTML = `<span class="info">Currently using: ${statusName}</span>`;
             console.log(`Audio choice applied: ${preferenceId} (${statusName})`);
             if (isTimerVisible || audioUnlocked) { 
@@ -577,16 +580,25 @@
         // Audio Settings Event Listeners (Updated)
         dom.audioSourceSelect.addEventListener('change', async () => {
             const selectedValue = dom.audioSourceSelect.value;
+            // Clear previous specific status messages when selection changes, general status will be set by applyAudioChoice
+            dom.audioUrlStatus.innerHTML = "";
+            
             if (selectedValue !== "custom_new") {
                 await applyAudioChoice(selectedValue);
+            } else {
+                // If "Add New..." is selected, keep the 'Currently using' status from the previous sound
+                // until a new one is saved.
+                const activePref = audioPreferences.find(p => p.id === currentActiveAudioPreferenceId) || { name: "Default Sound" };
+                dom.audioUrlStatus.innerHTML = `<span class="info">Currently using: ${utils.sanitizeHTML(activePref.name)}</span>`;
             }
             updateCustomAudioUI();
         });
 
+        // --- MODIFIED saveCustomAudioBtn CLICK HANDLER ---
         dom.saveCustomAudioBtn.addEventListener('click', async () => {
             const shortName = dom.customAudioShortNameInput.value.trim();
-            const customUrl = dom.customAudioUrlInput.value.trim();
-            dom.audioUrlStatus.innerHTML = "";
+            let customUrl = dom.customAudioUrlInput.value.trim(); // Use 'let' for potential modification
+            dom.audioUrlStatus.innerHTML = ""; // Clear previous status first
 
             if (!shortName) {
                 dom.audioUrlStatus.innerHTML = '<span class="error">Short Name is required.</span>';
@@ -606,24 +618,44 @@
                 return;
             }
 
+            // Dropbox URL correction
+            if (customUrl.includes("dropbox.com/")) {
+                const originalUrl = customUrl;
+                // Regex to find ?dl=0 or &dl=0 (and if it's followed by & or end of string)
+                customUrl = customUrl.replace(/([?&])dl=0(&|$)/, '$1dl=1$2');
+                if (customUrl !== originalUrl) {
+                    console.log("Corrected Dropbox URL from:", originalUrl, "to:", customUrl);
+                }
+            }
+
             dom.saveCustomAudioBtn.disabled = true;
             dom.saveCustomAudioBtn.textContent = "Saving...";
 
-            const newPref = await saveAudioPreferenceToFirebase(shortName, customUrl);
+            // Pass the (potentially corrected) customUrl
+            const newPref = await saveAudioPreferenceToFirebase(shortName, customUrl); 
 
             if (newPref) {
-                await applyAudioChoice(newPref.id); // This also updates currentActiveAudioPreferenceId
-                populateAudioSourceSelect();      // Refreshes dropdown, selects newPref.id
-                updateCustomAudioUI();            // Updates UI based on the new selection
-                dom.audioUrlStatus.innerHTML = `<span class="success">Sound "${utils.sanitizeHTML(newPref.name)}" saved and now active.</span>`;
+                // applyAudioChoice will set the new sound as active and update the status message.
+                await applyAudioChoice(newPref.id); 
+                populateAudioSourceSelect(); // Refreshes dropdown, should select newPref.id
+                updateCustomAudioUI();       // Updates UI based on the new selection (hides customUrlGroup)
+                // Success message is handled by applyAudioChoice's status update.
+                // Or add a more specific one:
+                dom.audioUrlStatus.innerHTML = `<span class="success">Sound "${utils.sanitizeHTML(newPref.name)}" saved. </span>` + dom.audioUrlStatus.innerHTML;
+
             } else {
-                // Error message is set by saveAudioPreferenceToFirebase
-                if (dom.audioSourceSelect.value === "custom_new") { // If still on add new mode (save failed)
+                // Error message should have been set by saveAudioPreferenceToFirebase if it returned null
+                if (dom.audioSourceSelect.value === "custom_new") { 
                     dom.saveCustomAudioBtn.textContent = "Save & Use This Sound";
                  }
             }
             dom.saveCustomAudioBtn.disabled = false;
+             if (dom.audioSourceSelect.value !== "custom_new") { // If save was successful and selection changed
+                dom.saveCustomAudioBtn.textContent = "Save & Use This Sound"; // Reset button text
+            }
         });
+        // --- END MODIFIED saveCustomAudioBtn CLICK HANDLER ---
+
 
         dom.removeFavoriteBtn.addEventListener('click', async () => {
             const prefIdToRemove = dom.audioSourceSelect.value;
@@ -641,22 +673,27 @@
 
             dom.removeFavoriteBtn.disabled = true;
             dom.removeFavoriteBtn.textContent = "Removing...";
+            let previousStatus = dom.audioUrlStatus.innerHTML; // Save current status in case of error
 
             try {
                 await deleteDoc(doc(db, AUDIO_PREFERENCES_COLLECTION, prefIdToRemove));
                 audioPreferences = audioPreferences.filter(p => p.id !== prefIdToRemove);
 
-                dom.audioUrlStatus.innerHTML = `<span class="success">Removed "${utils.sanitizeHTML(prefToRemove.name)}" from saved sounds.</span>`;
-
+                let newActiveId = currentActiveAudioPreferenceId;
                 if (currentActiveAudioPreferenceId === prefIdToRemove) {
-                    await applyAudioChoice("default"); // This updates currentActiveAudioPreferenceId
+                    newActiveId = "default"; // Revert to default if active one was removed
                 }
-                populateAudioSourceSelect(); 
-                updateCustomAudioUI();       
+                
+                await applyAudioChoice(newActiveId); // Sets new active, updates currentActiveAudioPreferenceId, updates status
+                populateAudioSourceSelect(); // Refreshes dropdown, should select the new active ID
+                updateCustomAudioUI();       // Updates UI (hides remove button if default is now active)
+                
+                dom.audioUrlStatus.innerHTML = `<span class="success">Removed "${utils.sanitizeHTML(prefToRemove.name)}". </span>` + dom.audioUrlStatus.innerHTML;
+
 
             } catch (error) {
                 console.error("Error removing audio preference:", error);
-                dom.audioUrlStatus.innerHTML = `<span class="error">Failed to remove sound: ${error.message}</span>`;
+                dom.audioUrlStatus.innerHTML = `<span class="error">Failed to remove sound: ${error.message}</span>` + previousStatus;
             } finally {
                 dom.removeFavoriteBtn.disabled = false;
                 dom.removeFavoriteBtn.textContent = "Remove Selected Sound";
@@ -671,21 +708,22 @@
             }
         });
 
-        // --- Initialization (Updated) ---
+        // --- MODIFIED Initialization ---
         (async () => {
             if (typeof ChartDataLabels !== 'undefined') Chart.register(ChartDataLabels);
             currentView = 'player'; currentDashboardPeriod = 'month'; currentDisplayDate = new Date();
 
-            await loadAudioPreferencesFromFirebase(); // Load custom sounds list
-            currentActiveAudioPreferenceId = await getActiveAudioPreferenceIdFromFirebase(); // Get active sound ID
+            await loadAudioPreferencesFromFirebase(); 
+            currentActiveAudioPreferenceId = await getActiveAudioPreferenceIdFromFirebase(); 
 
-            populateAudioSourceSelect(); // Populate dropdown and set its .value
-            await applyAudioChoice(currentActiveAudioPreferenceId); // Configure audio element and confirm active choice in DB
-            updateCustomAudioUI();       // Set initial state of custom URL group UI
+            populateAudioSourceSelect(); // Populates dropdown and sets its .value based on currentActiveAudioPreferenceId
+            await applyAudioChoice(currentActiveAudioPreferenceId); // Sets audio src, updates status message, confirms active choice in DB
+            updateCustomAudioUI();       // Sets initial visibility of customUrlGroup based on dropdown's current value
 
-            updateTimerDisplay(); // Set initial timer display (e.g., 1:00)
-            await loadData(); // Load players and wins
+            updateTimerDisplay(); 
+            await loadData(); 
         })();
+        // --- END MODIFIED Initialization ---
     </script>
 </body>
 </html>
