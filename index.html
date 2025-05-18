@@ -93,8 +93,8 @@
         #geminiApiKeyInputGroup label { font-weight: bold; }
         #geminiApiKeyInputGroup input[type="text"] { margin-bottom: 5px; }
         #geminiApiKeyNote { font-size:0.8em; color:#555; margin-top: 0; margin-bottom: 10px;}
-        #geminiInsightResult, #geminiImageIdeaResult { margin-top: 10px; padding: 12px; background-color: #ffffff; border-radius: 4px; min-height: 40px; border-left: 4px solid #ffc107; line-height: 1.5; }
-        #geminiImageIdeaResult { border-left-color: #2a9d8f; }
+        #geminiInsightResult { margin-top: 10px; padding: 12px; background-color: #ffffff; border-radius: 4px; min-height: 40px; border-left: 4px solid #ffc107; line-height: 1.5; }
+        /* #geminiImageIdeaResult { border-left-color: #2a9d8f; } Removed */
         .gemini-buttons-flex { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
         #changeApiKeyBtn { background-color: #6c757d; font-size: 0.9rem; padding: 8px 12px;}
         #listenToInsightBtn { /* Style will be set if needed, primarily display: none/inline-block handled by JS */ }
@@ -145,12 +145,12 @@
             <div id="geminiInsightResult">
                 Enter your API Key above to get started...
             </div>
-            <div id="geminiImageIdeaResult" class="hidden" style="margin-top:15px;">
+            <!-- <div id="geminiImageIdeaResult" class="hidden" style="margin-top:15px;"> -->
                 <!-- Image ideas will appear here -->
-            </div>
+            <!-- </div> Removed -->
             <div class="gemini-buttons-flex">
                 <button id="getGeminiInsightBtn">Get New Funny Insight 😂</button>
-                <button id="getGeminiImageIdeaBtn">Get Funny Image Idea 🎨</button>
+                <!-- <button id="getGeminiImageIdeaBtn">Get Funny Image Idea 🎨</button> Removed -->
                 <!-- The Listen button will be added here by JavaScript -->
             </div>
         </section>
@@ -213,7 +213,7 @@
 
 
         let app, db;
-        let firebaseInitializedSuccessfully = false; 
+        let firebaseInitializedSuccessfully = false;
 
         // --- Global Variables ---
         let players = [];
@@ -293,8 +293,8 @@
             changeApiKeyBtn: document.getElementById('changeApiKeyBtn'),
             getGeminiInsightBtn: document.getElementById('getGeminiInsightBtn'),
             geminiInsightResultDiv: document.getElementById('geminiInsightResult'),
-            getGeminiImageIdeaBtn: document.getElementById('getGeminiImageIdeaBtn'),
-            geminiImageIdeaResultDiv: document.getElementById('geminiImageIdeaResult'),
+            // getGeminiImageIdeaBtn: document.getElementById('getGeminiImageIdeaBtn'), // Removed
+            // geminiImageIdeaResultDiv: document.getElementById('geminiImageIdeaResult'), // Removed
             geminiButtonsFlexDiv: document.querySelector('.gemini-buttons-flex'),
             listenToInsightBtn: null, // Will be created dynamically
             firebaseConfigWarningDiv: document.getElementById('firebaseConfigWarning'),
@@ -356,7 +356,7 @@
                 dom.noPlayersForScoringMsg.textContent = "Error loading players.";
                 dom.noWinsTodayMsg.textContent = "Error loading wins.";
             } finally {
-                renderApp(); 
+                renderApp();
             }
         };
         const addPlayer = async (name) => { if (!firebaseInitializedSuccessfully || !db) { alert("Database connection error. Cannot add player."); return; } const tN = name.trim(); if (!tN) { dom.addPlayerError.textContent = "Name empty."; return; } if (players.some(p => p.name.toLowerCase() === tN.toLowerCase())) { dom.addPlayerError.textContent = "Name exists."; return; } dom.addPlayerError.textContent = ""; dom.addPlayerBtn.disabled = true; try { const dR = await addDoc(collection(db, "players"), { name: tN }); players.push({ id: dR.id, name: tN }); players.sort((a, b) => a.name.localeCompare(b.name)); renderApp(); dom.newPlayerNameInput.value = ''; if (getStoredGeminiApiKey()) handleGetGeminiInsight(false); } catch (error) { console.error("Error adding player:", error); dom.addPlayerError.textContent = `Failed to add player: ${error.message}`; } finally { dom.addPlayerBtn.disabled = false; } };
@@ -394,7 +394,7 @@
         // --- Gemini AI & TTS Insight Functions ---
         function getStoredGeminiApiKey() { return localStorage.getItem(GEMINI_API_KEY_STORAGE_KEY); }
         function storeGeminiApiKey(apiKey) { localStorage.setItem(GEMINI_API_KEY_STORAGE_KEY, apiKey); }
-        
+
         function isValidInsightText(text) {
             if (!text) return false;
             const lowerText = text.toLowerCase();
@@ -402,7 +402,7 @@
                 'enter your api key', 'please enter your gemini api key', 'api key is stored',
                 'fetching initial insight', 'conjuring witticisms', 'rethinking...',
                 'spicy error:', 'api key needed', 'database not connected', 'creative block',
-                'sketching...', 'imagining a masterpiece...'
+                // 'sketching...', 'imagining a masterpiece...' // Removed as these were for image idea
             ];
             return !placeholders.some(p => lowerText.includes(p));
         }
@@ -414,7 +414,7 @@
 
             if (canListen) {
                 dom.listenToInsightBtn.style.display = 'inline-block';
-                dom.listenToInsightBtn.disabled = isSpeaking; 
+                dom.listenToInsightBtn.disabled = isSpeaking;
                 if (!isSpeaking) {
                     dom.listenToInsightBtn.innerHTML = '🔊 Audiable Insight!';
                 }
@@ -422,24 +422,21 @@
                 dom.listenToInsightBtn.style.display = 'none';
                 if (insightAudio && !insightAudio.paused) {
                     insightAudio.pause();
-                    insightAudio.currentTime = 0; 
+                    insightAudio.currentTime = 0;
                 }
-                // If button is hidden, ensure speaking state is reset IF it's not already speaking
-                // This prevents interrupting active speech just by, e.g., key removal.
-                // The stop functionality is now part of the button click itself.
             }
         }
 
         function addListenToInsightButton() {
-            if (dom.listenToInsightBtn || !dom.geminiButtonsFlexDiv) return; 
+            if (dom.listenToInsightBtn || !dom.geminiButtonsFlexDiv) return;
 
             const button = document.createElement('button');
             button.id = 'listenToInsightBtn';
             button.innerHTML = '🔊 Listen';
-            button.classList.add('icon-button', 'secondary'); 
+            button.classList.add('icon-button', 'secondary');
             button.style.marginLeft = '0px'; // Rely on flex gap
             button.style.display = 'none'; // Initially hidden
-            
+
             dom.geminiButtonsFlexDiv.appendChild(button);
             dom.listenToInsightBtn = button;
 
@@ -464,7 +461,7 @@
                 await speakTextWithGoogleTTS(textToSpeak);
             });
         }
-        
+
                async function speakTextWithGoogleTTS(textToSpeak) {
             const apiKey = getStoredGeminiApiKey();
             if (!apiKey) {
@@ -484,7 +481,6 @@
                 { name: "en-US-Chirp-HD-F", gender: "FEMALE" } // Female, expressive
             ];
             const selectedVoice = voices[Math.floor(Math.random() * voices.length)];
-            // const ssmlText = `<speak>${utils.sanitizeHTML(textToSpeak)}</speak>`; // REMOVED SSML WRAPPING
             const TTS_API_URL = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`;
 
             try {
@@ -492,16 +488,15 @@
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        // input: { ssml: ssmlText }, // CHANGED FROM SSML
-                        input: { text: textToSpeak },   // TO PLAIN TEXT
+                        input: { text: textToSpeak },
                         voice: {
                             languageCode: 'en-US',
                             name: selectedVoice.name
                         },
                         audioConfig: {
                             audioEncoding: 'MP3',
-                            speakingRate: 1.0, 
-                            pitch: 0 
+                            speakingRate: 1.0,
+                            pitch: 0
                         }
                     })
                 });
@@ -525,7 +520,7 @@
                     const audioUrl = URL.createObjectURL(audioBlob);
 
                     if (!insightAudio) insightAudio = new Audio();
-                    
+
                     insightAudio.src = audioUrl;
                     dom.listenToInsightBtn.innerHTML = '🔊 Playing...';
 
@@ -535,24 +530,23 @@
                             isSpeaking = false;
                             dom.listenToInsightBtn.innerHTML = '🔊 Listen';
                             dom.listenToInsightBtn.disabled = false;
-                            toggleListenButton(true, textToSpeak); 
-                            alert("Error playing audio. Check console.");
+                            toggleListenButton(true, textToSpeak);
                             URL.revokeObjectURL(audioUrl);
                         });
 
                     insightAudio.onended = () => {
                         isSpeaking = false;
                         dom.listenToInsightBtn.innerHTML = '🔊 Listen';
-                        dom.listenToSBtn.disabled = false;
-                        toggleListenButton(true, textToSpeak); 
-                        URL.revokeObjectURL(audioUrl); 
+                        dom.listenToInsightBtn.disabled = false; // Corrected from listenToSBtn
+                        toggleListenButton(true, textToSpeak);
+                        URL.revokeObjectURL(audioUrl);
                     };
                     insightAudio.onerror = (e) => {
                         console.error("Audio playback error object:", e);
                         isSpeaking = false;
                         dom.listenToInsightBtn.innerHTML = '🔊 Listen (Err)';
                         dom.listenToInsightBtn.disabled = false;
-                        toggleListenButton(true, textToSpeak); 
+                        toggleListenButton(true, textToSpeak);
                         URL.revokeObjectURL(audioUrl);
                         alert("Error during audio playback. Check console.");
                     };
@@ -567,48 +561,48 @@
                 isSpeaking = false;
                 dom.listenToInsightBtn.innerHTML = '🔊 Listen';
                 dom.listenToInsightBtn.disabled = false;
-                toggleListenButton(true, textToSpeak); 
+                toggleListenButton(true, textToSpeak);
             }
         }
 
 
-        function updateApiKeySectionVisibility() { 
-            const storedKey = getStoredGeminiApiKey(); 
-            if (storedKey) { 
-                dom.geminiApiKeyInputGroup.classList.add('hidden'); 
-                dom.geminiApiKeyStoredInfo.classList.remove('hidden'); 
-                dom.getGeminiInsightBtn.disabled = !firebaseInitializedSuccessfully; 
-                dom.getGeminiImageIdeaBtn.disabled = !firebaseInitializedSuccessfully; 
-            } else { 
-                dom.geminiApiKeyInputGroup.classList.remove('hidden'); 
-                dom.geminiApiKeyStoredInfo.classList.add('hidden'); 
-                dom.geminiApiKeyInput.value = ''; 
-                dom.getGeminiInsightBtn.disabled = true; 
-                dom.getGeminiImageIdeaBtn.disabled = true; 
-                dom.geminiInsightResultDiv.textContent = 'Please enter your Gemini API Key to enable AI insights.'; 
+        function updateApiKeySectionVisibility() {
+            const storedKey = getStoredGeminiApiKey();
+            if (storedKey) {
+                dom.geminiApiKeyInputGroup.classList.add('hidden');
+                dom.geminiApiKeyStoredInfo.classList.remove('hidden');
+                dom.getGeminiInsightBtn.disabled = !firebaseInitializedSuccessfully;
+                // dom.getGeminiImageIdeaBtn.disabled = !firebaseInitializedSuccessfully; // Removed
+            } else {
+                dom.geminiApiKeyInputGroup.classList.remove('hidden');
+                dom.geminiApiKeyStoredInfo.classList.add('hidden');
+                dom.geminiApiKeyInput.value = '';
+                dom.getGeminiInsightBtn.disabled = true;
+                // dom.getGeminiImageIdeaBtn.disabled = true; // Removed
+                dom.geminiInsightResultDiv.textContent = 'Please enter your Gemini API Key to enable AI insights.';
                 toggleListenButton(false); // Hide listen button if key is removed
-            } 
+            }
         }
         async function fetchFromGemini(apiKey, promptText, model = "gemini-2.0-flash") { const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`; try { const response = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', }, body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }], generationConfig: { temperature: 0.8, topK: 40, topP: 0.95, maxOutputTokens: 200 } }), }); if (!response.ok) { const errorData = await response.json(); console.error('Gemini API Error:', errorData); throw new Error(`Gemini API Error (${response.status}): ${errorData?.error?.message || response.statusText}. Ensure API is enabled and model name is correct.`); } const data = await response.json(); if (data.candidates && data.candidates[0]?.content?.parts[0]?.text) { return data.candidates[0].content.parts[0].text; } else if (data.promptFeedback?.blockReason) { throw new Error(`Content blocked: ${data.promptFeedback.blockReason}. ${data.promptFeedback.blockReasonMessage || ''}`); } throw new Error('Could not extract response from Gemini.'); } catch (error) { console.error('Error fetching from Gemini:', error); throw error; } }
         function prepareDataForGemini() { let dataSummary = "Rummikub Game Stats:\n"; if (players.length === 0 && firebaseInitializedSuccessfully) return dataSummary + "No players yet. It's a lonely game so far!\n"; if (!firebaseInitializedSuccessfully) return dataSummary + "Database not connected. Cannot provide stats.\n"; dataSummary += `Players: ${players.map(p => utils.sanitizeHTML(p.name)).join(', ')}\n\n`; const totalWinsByPlayer = players.map(p => ({ name: utils.sanitizeHTML(p.name), count: wins.filter(w => w.playerId === p.id).length })).sort((a, b) => b.count - a.count); dataSummary += "Overall Leaderboard (All Time):\n"; if (totalWinsByPlayer.some(p => p.count > 0)) { totalWinsByPlayer.forEach(p => dataSummary += `- ${p.name}: ${utils.pluralize(p.count, 'win')}\n`); } else { dataSummary += "- No one has won yet! The trophy is still up for grabs!\n"; } dataSummary += "\n"; const { start: currentStart, end: currentEnd } = utils.getPeriodRange(currentDashboardPeriod, currentDisplayDate); const currentPeriodWinsData = getWinsForPeriodLocal(currentDashboardPeriod, currentDisplayDate); let currentPeriodTitle = ''; switch (currentDashboardPeriod) { case 'week': currentPeriodTitle = `This Week (${currentStart.toLocaleDateString()} - ${currentEnd.toLocaleDateString()})`; break; case 'month': currentPeriodTitle = `This Month (${utils.getFullMonthName(currentDisplayDate.getMonth())} ${currentDisplayDate.getFullYear()})`; break; case 'year': currentPeriodTitle = `This Year (${currentDisplayDate.getFullYear()})`; break; } dataSummary += `Performance - ${currentPeriodTitle}:\n`; if (currentPeriodWinsData.length > 0) { const winsByPlayer = players.reduce((acc, p) => ({...acc, [p.id]: { name: utils.sanitizeHTML(p.name), count: 0 }}), {}); currentPeriodWinsData.forEach(w => { if (winsByPlayer[w.playerId]) winsByPlayer[w.playerId].count++; }); Object.values(winsByPlayer).filter(p=>p.count > 0).sort((a,b) => b.count - a.count).forEach(p => dataSummary += `- ${p.name}: ${utils.pluralize(p.count, 'win')}\n`); } else { dataSummary += `- No wins recorded in this period. Is everyone on vacation?\n`; } dataSummary += "\n"; let prevDate = new Date(currentDisplayDate); let prevPeriodTitle = ""; if (currentDashboardPeriod === 'week') { prevDate.setDate(prevDate.getDate() - 7); prevPeriodTitle = "Last Week"; } else if (currentDashboardPeriod === 'month') { prevDate.setMonth(prevDate.getMonth() - 1); prevPeriodTitle = "Last Month"; } else if (currentDashboardPeriod === 'year') { prevDate.setFullYear(prevDate.getFullYear() - 1); prevPeriodTitle = "Last Year"; } if (prevPeriodTitle) { const prevPeriodWinsData = getWinsForPeriodLocal(currentDashboardPeriod, prevDate); dataSummary += `For Comparison - ${prevPeriodTitle}:\n`; if (prevPeriodWinsData.length > 0) { const winsByPlayerPrev = players.reduce((acc, p) => ({...acc, [p.id]: { name: utils.sanitizeHTML(p.name), count: 0 }}), {}); prevPeriodWinsData.forEach(w => { if (winsByPlayerPrev[w.playerId]) winsByPlayerPrev[w.playerId].count++; }); Object.values(winsByPlayerPrev).filter(p=>p.count > 0).sort((a,b) => b.count - a.count).forEach(p => dataSummary += `- ${p.name}: ${utils.pluralize(p.count, 'win')}\n`); } else { dataSummary += `- No wins recorded in ${prevPeriodTitle}. A fresh start perhaps!\n`; } dataSummary += "\n"; } const threeDaysAgo = new Date(); threeDaysAgo.setDate(threeDaysAgo.getDate() - 2); threeDaysAgo.setHours(0,0,0,0); const recentWinsRaw = wins.filter(w => w.timestamp?.toDate() >= threeDaysAgo); if(recentWinsRaw.length > 0){ dataSummary += "Hot Streaks (Last 3 Days including Today):\n"; const recentSummary = recentWinsRaw.reduce((acc,w) => { const pName = players.find(p=>p.id === w.playerId)?.name || "An Unknown Force"; acc[utils.sanitizeHTML(pName)] = (acc[utils.sanitizeHTML(pName)] || 0) + 1; return acc; }, {}); Object.entries(recentSummary).sort(([,a],[,b]) => b-a).forEach(([name, count]) => dataSummary += `- ${name} won ${utils.pluralize(count, 'time')}\n`); } else { dataSummary += "Recent Activity: A bit quiet lately. Time to shuffle the tiles!\n" } return dataSummary; }
-        async function handleGetGeminiInsight(isButtonPress = true) { 
-            const apiKey = dom.geminiApiKeyInput.value.trim() || getStoredGeminiApiKey(); 
-            if (!apiKey) { 
-                dom.geminiInsightResultDiv.innerHTML = `<span style="color:red;">API Key needed! Please enter it above.</span>`; 
-                updateApiKeySectionVisibility(); 
+        async function handleGetGeminiInsight(isButtonPress = true) {
+            const apiKey = dom.geminiApiKeyInput.value.trim() || getStoredGeminiApiKey();
+            if (!apiKey) {
+                dom.geminiInsightResultDiv.innerHTML = `<span style="color:red;">API Key needed! Please enter it above.</span>`;
+                updateApiKeySectionVisibility();
                 toggleListenButton(false);
-                return; 
-            } 
-            if (!firebaseInitializedSuccessfully) { 
-                dom.geminiInsightResultDiv.innerHTML = `<span style="color:orange;">Database not connected. AI insights need game data.</span>`; 
+                return;
+            }
+            if (!firebaseInitializedSuccessfully) {
+                dom.geminiInsightResultDiv.innerHTML = `<span style="color:orange;">Database not connected. AI insights need game data.</span>`;
                 toggleListenButton(false);
-                return; 
-            } 
-            if (isButtonPress || !getStoredGeminiApiKey()) storeGeminiApiKey(apiKey); 
-            updateApiKeySectionVisibility(); 
-            dom.getGeminiInsightBtn.disabled = true; 
-            dom.getGeminiInsightBtn.textContent = 'Rethinking... 😂'; 
-            
+                return;
+            }
+            if (isButtonPress || !getStoredGeminiApiKey()) storeGeminiApiKey(apiKey);
+            updateApiKeySectionVisibility();
+            dom.getGeminiInsightBtn.disabled = true;
+            dom.getGeminiInsightBtn.textContent = 'Rethinking... 😂';
+
             if (isSpeaking && insightAudio) { // Stop any ongoing speech
                 insightAudio.pause();
                 insightAudio.currentTime = 0;
@@ -616,10 +610,10 @@
             }
             toggleListenButton(false); // Hide button while fetching new insight
 
-            if (!isButtonPress) dom.geminiInsightResultDiv.innerHTML = 'Fetching initial insight... 🧠'; 
-            else dom.geminiInsightResultDiv.innerHTML = 'Conjuring witticisms... 🧠'; 
-            
-            const gameDataSummary = prepareDataForGemini(); 
+            if (!isButtonPress) dom.geminiInsightResultDiv.innerHTML = 'Fetching initial insight... 🧠';
+            else dom.geminiInsightResultDiv.innerHTML = 'Conjuring witticisms... 🧠';
+
+            const gameDataSummary = prepareDataForGemini();
             const prompt = `
 You are a witty, observant, and slightly sarcastic Rummikub game commentator with a knack for comedic timing. Your audience loves your playful jabs and insightful, humorous takes. Your commentary should sound like a friend chatting excitedly, sometimes conspiratorially, with another friend about the game.
 
@@ -657,20 +651,20 @@ Based on the Rummikub game stats below, provide a funny and insightful commentar
 ${gameDataSummary}
 
 **Your Funny Commentary (remember, 1-3 flowing sentences, mentioning all players):**
-`;; 
-            try { 
-                const insight = await fetchFromGemini(apiKey, prompt, "gemini-2.0-flash"); 
-                dom.geminiInsightResultDiv.textContent = insight.trim(); 
+`;;
+            try {
+                const insight = await fetchFromGemini(apiKey, prompt, "gemini-2.0-flash");
+                dom.geminiInsightResultDiv.textContent = insight.trim();
                 toggleListenButton(true, insight.trim());
-            } catch (error) { 
-                dom.geminiInsightResultDiv.innerHTML = `<span style="color:red;">Spicy Error: ${utils.sanitizeHTML(error.message)}</span> <br>Maybe the AI is on a coffee break? Check API key & console.`; 
+            } catch (error) {
+                dom.geminiInsightResultDiv.innerHTML = `<span style="color:red;">Spicy Error: ${utils.sanitizeHTML(error.message)}</span> <br>Maybe the AI is on a coffee break? Check API key & console.`;
                 toggleListenButton(false);
-            } finally { 
-                dom.getGeminiInsightBtn.disabled = false; 
-                dom.getGeminiInsightBtn.textContent = 'Get New Funny Insight 😂'; 
-            } 
+            } finally {
+                dom.getGeminiInsightBtn.disabled = false;
+                dom.getGeminiInsightBtn.textContent = 'Get New Funny Insight 😂';
+            }
         }
-        async function handleGetGeminiImageIdea() { const apiKey = dom.geminiApiKeyInput.value.trim() || getStoredGeminiApiKey(); if (!apiKey) { dom.geminiImageIdeaResultDiv.innerHTML = `<span style="color:red;">API Key needed for artistic visions!</span>`; dom.geminiImageIdeaResultDiv.classList.remove('hidden'); updateApiKeySectionVisibility(); return; } if (!firebaseInitializedSuccessfully) { dom.geminiImageIdeaResultDiv.innerHTML = `<span style="color:orange;">Database not connected. Image ideas need game data.</span>`; dom.geminiImageIdeaResultDiv.classList.remove('hidden'); return; } storeGeminiApiKey(apiKey); updateApiKeySectionVisibility(); dom.getGeminiImageIdeaBtn.disabled = true; dom.getGeminiImageIdeaBtn.textContent = 'Sketching... 🎨'; dom.geminiImageIdeaResultDiv.innerHTML = 'Imagining a masterpiece... 🖼️'; dom.geminiImageIdeaResultDiv.classList.remove('hidden'); const gameDataSummary = prepareDataForGemini(); const prompt = `\nYou are a whimsical and imaginative cartoonist asked to describe a funny Rummikub-themed cartoon scene based on game stats.\nDescribe a single, vivid, cartoon-like scene. Make it funny, slightly absurd, and related to the game or player performance.\n- Focus on a key player or a funny comparison from the stats.\n- Example description: "Picture [Player X], crowned with a lopsided paper crown, smugly riding a giant Rummikub tile like a surfboard, while [Player Y] comically trips over a pile of unused tiles in the background, a confused chicken perched on their head."\n- Be creative and brief (2-3 sentences for the description).\n\nGame Stats for Inspiration:\n${gameDataSummary}\n\nYour funny cartoon scene description:\n            `; try { const imageIdea = await fetchFromGemini(apiKey, prompt, "gemini-2.0-flash"); dom.geminiImageIdeaResultDiv.textContent = imageIdea.trim(); } catch (error) { dom.geminiImageIdeaResultDiv.innerHTML = `<span style="color:red;">Creative Block: ${utils.sanitizeHTML(error.message)}</span> <br>The AI's muse might be napping. Check API key & console.`; } finally { dom.getGeminiImageIdeaBtn.disabled = false; dom.getGeminiImageIdeaBtn.textContent = 'Get Funny Image Idea 🎨'; } }
+        // async function handleGetGeminiImageIdea() { ... } // Removed function
 
         // --- Event Listeners ---
         dom.togglePlayerManagementBtn.addEventListener('click', () => { dom.playerManagementSection.classList.toggle('hidden'); const i = dom.playerManagementSection.classList.contains('hidden'); dom.togglePlayerManagementBtn.textContent = i ? '⚙️ Manage' : '🔽 Close'; });
@@ -696,7 +690,7 @@ ${gameDataSummary}
         dom.geminiApiKeyInput.addEventListener('change', () => { const apiKey = dom.geminiApiKeyInput.value.trim(); if (apiKey) { storeGeminiApiKey(apiKey); updateApiKeySectionVisibility(); if (firebaseInitializedSuccessfully) handleGetGeminiInsight(false); } });
         dom.changeApiKeyBtn.addEventListener('click', () => { localStorage.removeItem(GEMINI_API_KEY_STORAGE_KEY); updateApiKeySectionVisibility(); dom.geminiApiKeyInput.focus(); });
         dom.getGeminiInsightBtn.addEventListener('click', () => handleGetGeminiInsight(true));
-        dom.getGeminiImageIdeaBtn.addEventListener('click', handleGetGeminiImageIdea);
+        // dom.getGeminiImageIdeaBtn.addEventListener('click', handleGetGeminiImageIdea); // Removed listener
         document.addEventListener('visibilitychange', async () => { if (document.visibilityState === 'visible') { if (isTimerVisible && !wakeLockSentinel) await requestWakeLock(); if (isTimerVisible || audioUnlocked) unlockAudioContext(); } });
 
         // --- Initialization (IIFE) ---
@@ -708,7 +702,7 @@ ${gameDataSummary}
                 if (!firebaseConfig.apiKey || firebaseConfig.apiKey.includes("YOUR_") || firebaseConfig.apiKey.includes("Replace!") ||
                     !firebaseConfig.projectId || firebaseConfig.projectId.includes("YOUR_") || firebaseConfig.projectId.includes("Replace!")) {
                     dom.firebaseConfigWarningDiv.innerHTML = '<strong>Firebase Setup: CRITICAL!</strong> Please replace placeholder values in `firebaseConfig` (like YOUR_API_KEY, YOUR_PROJECT_ID) with your actual Firebase project configuration. Stats will not load without this.';
-                    dom.firebaseConfigWarningDiv.style.backgroundColor = '#f8d7da'; 
+                    dom.firebaseConfigWarningDiv.style.backgroundColor = '#f8d7da';
                     console.error("Firebase config contains placeholder values. Halting Firebase initialization.");
                 } else {
                     app = initializeApp(firebaseConfig);
@@ -737,7 +731,7 @@ ${gameDataSummary}
             currentView = 'player';
             currentDashboardPeriod = 'month';
             currentDisplayDate = new Date();
-            updateApiKeySectionVisibility(); 
+            updateApiKeySectionVisibility();
             updateTimerDisplay();
 
             if (firebaseInitializedSuccessfully) {
@@ -750,7 +744,7 @@ ${gameDataSummary}
                     updateCustomAudioUI();
                     console.log("Audio preferences loaded.");
 
-                    await loadData(); 
+                    await loadData();
                     console.log("Game data loading initiated (players, wins).");
 
                     if (getStoredGeminiApiKey()) {
@@ -760,27 +754,27 @@ ${gameDataSummary}
                         dom.geminiInsightResultDiv.textContent = 'Enter Gemini API Key for AI insights.';
                         toggleListenButton(false);
                         dom.getGeminiInsightBtn.disabled = true;
-                        dom.getGeminiImageIdeaBtn.disabled = true;
+                        // dom.getGeminiImageIdeaBtn.disabled = true; // Removed
                     }
                 } catch (error) {
                     console.error("Error during Firebase-dependent setup (audio/data/gemini):", error);
-                    renderApp(); 
+                    renderApp();
                     dom.noPlayersForScoringMsg.textContent = "Error loading app data. Check console.";
                     dom.noPlayersForScoringMsg.classList.remove('hidden');
                     toggleListenButton(false);
                 }
             } else {
                 console.warn("Firebase not initialized. Skipping Firebase-dependent setup.");
-                renderApp(); 
+                renderApp();
                 dom.noPlayersForScoringMsg.textContent = "Database connection failed. Cannot load players.";
                 dom.noPlayersForScoringMsg.classList.remove('hidden');
                 dom.noWinsTodayMsg.textContent = "Database connection failed.Cannot load wins.";
                 dom.noWinsTodayMsg.classList.remove('hidden');
                 if(dom.scoreTrackingListUl) dom.scoreTrackingListUl.innerHTML = '<p class="no-data">Score tracking unavailable (database error).</p>';
-                
+
                 toggleListenButton(false);
                 dom.getGeminiInsightBtn.disabled = true;
-                dom.getGeminiImageIdeaBtn.disabled = true;
+                // dom.getGeminiImageIdeaBtn.disabled = true; // Removed
                 if (!getStoredGeminiApiKey()) {
                     dom.geminiInsightResultDiv.textContent = 'Please enter your Gemini API Key. AI features also require database connection.';
                 } else {
