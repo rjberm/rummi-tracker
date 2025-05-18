@@ -97,6 +97,7 @@
         #geminiImageIdeaResult { border-left-color: #2a9d8f; }
         .gemini-buttons-flex { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
         #changeApiKeyBtn { background-color: #6c757d; font-size: 0.9rem; padding: 8px 12px;}
+        #listenToInsightBtn { /* Style will be set if needed, primarily display: none/inline-block handled by JS */ }
         #firebaseConfigWarning, #firebaseError {
             padding: 10px; margin-top: 20px; border-radius: 5px; font-size: 0.9em;
             word-break: break-word; /* Ensure long messages wrap */
@@ -114,6 +115,8 @@
         <button id="hideTimerBtn" aria-label="Hide Timer">Hide Timer</button>
     </div>
     <audio id="timerAudio" preload="auto"></audio>
+    <!-- <audio id="insightAudioPlayer" class="hidden"></audio> --> <!-- Not strictly needed if creating Audio obj dynamically -->
+
 
     <div class="app-container">
          <header>
@@ -132,6 +135,7 @@
                 <p id="geminiApiKeyNote">
                     Get your key from <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer">Google AI Studio</a>.
                     The key will be stored in your browser's local storage.
+                    <br><strong>Note:</strong> This key will also be used for Text-to-Speech. Ensure the Cloud Text-to-Speech API is enabled in your Google Cloud Project.
                 </p>
             </div>
             <div id="geminiApiKeyStoredInfo" class="hidden">
@@ -147,6 +151,7 @@
             <div class="gemini-buttons-flex">
                 <button id="getGeminiInsightBtn">Get New Funny Insight 😂</button>
                 <button id="getGeminiImageIdeaBtn">Get Funny Image Idea 🎨</button>
+                <!-- The Listen button will be added here by JavaScript -->
             </div>
         </section>
 
@@ -195,6 +200,7 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-app.js";
         import { getFirestore, collection, getDocs, getDoc, addDoc, deleteDoc, updateDoc, doc, query, orderBy, Timestamp, serverTimestamp, setDoc } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-firestore.js";
 
+        // Firebase configuration (replace with your actual config)
         const firebaseConfig = {
           apiKey: "AIzaSyD-e3H5CaoQobBqFwzDnCGZCUbniZQg_J0", // Replace!
           authDomain: "i-am-awesome-tasker.firebaseapp.com", // Replace!
@@ -204,6 +210,7 @@
           appId: "1:853316153385:web:db1fc1304b54a198a82c38", // Replace!
           measurementId: "G-ZDBF73CFXS" // Optional: Replace!
         };
+
 
         let app, db;
         let firebaseInitializedSuccessfully = false; 
@@ -224,6 +231,8 @@
         let wakeLockSentinel = null;
         let audioPreferences = [];
         let currentActiveAudioPreferenceId = "default";
+        let insightAudio = null; // For TTS audio object
+        let isSpeaking = false; // For TTS state
 
         const DEFAULT_AUDIO_URL = "https://www.dropbox.com/scl/fi/540eent9p1es21f4ep2ix/trompo_1-edit.mp3?rlkey=m0hhk27s8892ow6eyogpqxm00&st=zi9nt3i9&dl=1";
         const AUDIO_PREFERENCES_COLLECTION = 'audioPreferences';
@@ -286,22 +295,24 @@
             geminiInsightResultDiv: document.getElementById('geminiInsightResult'),
             getGeminiImageIdeaBtn: document.getElementById('getGeminiImageIdeaBtn'),
             geminiImageIdeaResultDiv: document.getElementById('geminiImageIdeaResult'),
+            geminiButtonsFlexDiv: document.querySelector('.gemini-buttons-flex'),
+            listenToInsightBtn: null, // Will be created dynamically
             firebaseConfigWarningDiv: document.getElementById('firebaseConfigWarning'),
             firebaseErrorDiv: document.getElementById('firebaseError'),
             firebaseErrorMessageSpan: document.getElementById('firebaseErrorMessage'),
         };
 
         // --- Utility Functions ---
-        const utils = { /* ... Jūsu esošais kods ... */ getTodayDateString: () => new Date().toDateString(), formatTime: (timestamp) => { if (!timestamp) return ''; const date = timestamp.toDate ? timestamp.toDate() : (timestamp instanceof Date ? timestamp : null); if (!date) return ''; return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }, getMonthName: (monthIndex) => ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][monthIndex], getFullMonthName: (monthIndex) => ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][monthIndex], getPeriodRange: (period, baseDate = new Date()) => { let start = new Date(baseDate); let end = new Date(baseDate); switch (period) { case 'week': const dayOfWeek = start.getDay(); const diff = start.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); start = new Date(start.setDate(diff)); start.setHours(0, 0, 0, 0); end = new Date(start); end.setDate(start.getDate() + 6); end.setHours(23, 59, 59, 999); break; case 'month': start = new Date(start.getFullYear(), start.getMonth(), 1); start.setHours(0, 0, 0, 0); end = new Date(start.getFullYear(), start.getMonth() + 1, 0); end.setHours(23, 59, 59, 999); break; case 'year': start = new Date(start.getFullYear(), 0, 1); start.setHours(0, 0, 0, 0); end = new Date(start.getFullYear(), 11, 31); end.setHours(23, 59, 59, 999); break; } return { start, end }; }, sanitizeHTML: (str) => { const temp = document.createElement('div'); temp.textContent = str; return temp.innerHTML; }, pluralize: (count, singular, plural = null) => { plural = plural ?? singular + 's'; return count === 1 ? `${count} ${singular}` : `${count} ${plural}`; } };
+        const utils = { getTodayDateString: () => new Date().toDateString(), formatTime: (timestamp) => { if (!timestamp) return ''; const date = timestamp.toDate ? timestamp.toDate() : (timestamp instanceof Date ? timestamp : null); if (!date) return ''; return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }, getMonthName: (monthIndex) => ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][monthIndex], getFullMonthName: (monthIndex) => ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][monthIndex], getPeriodRange: (period, baseDate = new Date()) => { let start = new Date(baseDate); let end = new Date(baseDate); switch (period) { case 'week': const dayOfWeek = start.getDay(); const diff = start.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); start = new Date(start.setDate(diff)); start.setHours(0, 0, 0, 0); end = new Date(start); end.setDate(start.getDate() + 6); end.setHours(23, 59, 59, 999); break; case 'month': start = new Date(start.getFullYear(), start.getMonth(), 1); start.setHours(0, 0, 0, 0); end = new Date(start.getFullYear(), start.getMonth() + 1, 0); end.setHours(23, 59, 59, 999); break; case 'year': start = new Date(start.getFullYear(), 0, 1); start.setHours(0, 0, 0, 0); end = new Date(start.getFullYear(), 11, 31); end.setHours(23, 59, 59, 999); break; } return { start, end }; }, sanitizeHTML: (str) => { const temp = document.createElement('div'); temp.textContent = str; return temp.innerHTML; }, pluralize: (count, singular, plural = null) => { plural = plural ?? singular + 's'; return count === 1 ? `${count} ${singular}` : `${count} ${plural}`; } };
 
         // --- Audio Settings Management ---
-        async function loadAudioPreferencesFromFirebase() { /* ... Jūsu esošais kods ... */ if (!db) { audioPreferences = []; return; } try { const prefsCollection = collection(db, AUDIO_PREFERENCES_COLLECTION); const prefsQuery = query(prefsCollection, orderBy("name")); const snapshot = await getDocs(prefsQuery); audioPreferences = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); } catch (error) { console.error("Error loading audio preferences:", error); dom.audioUrlStatus.innerHTML = `<span class="error">Failed to load audio list: ${error.message}</span>`; audioPreferences = []; } }
-        async function saveAudioPreferenceToFirebase(name, url) { /* ... Jūsu esošais kods ... */ if (!db) return null; name = name.trim(); url = url.trim(); const existingByName = audioPreferences.find(p => p.name.toLowerCase() === name.toLowerCase()); if (existingByName) { dom.audioUrlStatus.innerHTML = `<span class="error">A sound with the name "${utils.sanitizeHTML(name)}" already exists. Please choose a different name.</span>`; return null; } const existingByUrl = audioPreferences.find(p => p.url === url); if (existingByUrl) { dom.audioUrlStatus.innerHTML = `<span class="info">This URL is already saved as "${utils.sanitizeHTML(existingByUrl.name)}". To use it, select it from the list.</span>`; return null; } try { const docRef = await addDoc(collection(db, AUDIO_PREFERENCES_COLLECTION), { name: name, url: url, createdAt: serverTimestamp() }); const newPref = { id: docRef.id, name, url, createdAt: Timestamp.now() }; audioPreferences.push(newPref); audioPreferences.sort((a, b) => a.name.localeCompare(b.name)); return newPref; } catch (error) { console.error("Error saving audio preference:", error); dom.audioUrlStatus.innerHTML = `<span class="error">Failed to save sound: ${error.message}</span>`; return null; } }
-        async function getActiveAudioPreferenceIdFromFirebase() { /* ... Jūsu esošais kods ... */ if (!db) return "default"; try { const configDocRef = doc(db, APP_CONFIG_COLLECTION, TIMER_SETTINGS_DOC_ID); const docSnap = await getDoc(configDocRef); if (docSnap.exists() && docSnap.data().activeAudioPreferenceId) { return docSnap.data().activeAudioPreferenceId; } return "default"; } catch (error) { console.error("Error getting active audio preference:", error); return "default"; } }
-        async function setActiveAudioPreferenceIdInFirebase(preferenceId) { /* ... Jūsu esošais kods ... */ if (!db) return; currentActiveAudioPreferenceId = preferenceId; try { const configDocRef = doc(db, APP_CONFIG_COLLECTION, TIMER_SETTINGS_DOC_ID); await setDoc(configDocRef, { activeAudioPreferenceId: preferenceId }, { merge: true }); } catch (error) { console.error("Error setting active audio preference:", error); dom.audioUrlStatus.innerHTML = `<span class="error">Failed to save active sound choice: ${error.message}</span>`; } }
-        const populateAudioSourceSelect = () => { /* ... Jūsu esošais kods ... */ const activeId = currentActiveAudioPreferenceId; dom.audioSourceSelect.innerHTML = ''; const defaultOption = new Option("Default Sound", "default"); dom.audioSourceSelect.add(defaultOption); audioPreferences.forEach(pref => { const option = new Option(utils.sanitizeHTML(pref.name), pref.id); dom.audioSourceSelect.add(option); }); const customNewOption = new Option("Add New Custom Sound...", "custom_new"); dom.audioSourceSelect.add(customNewOption); if (activeId !== "default" && !audioPreferences.some(p => p.id === activeId)) { console.warn(`Stale activeAudioPreferenceId '${activeId}' found. Reverting to default.`); currentActiveAudioPreferenceId = "default"; if(firebaseInitializedSuccessfully) setActiveAudioPreferenceIdInFirebase("default"); dom.audioSourceSelect.value = "default"; } else { dom.audioSourceSelect.value = activeId || "default"; } };
-        const updateCustomAudioUI = () => { /* ... Jūsu esošais kods ... */ const selectedValue = dom.audioSourceSelect.value; if (selectedValue === "custom_new") { dom.customUrlGroup.classList.remove('hidden'); dom.customAudioShortNameInput.value = ""; dom.customAudioUrlInput.value = ""; dom.customAudioShortNameInput.readOnly = false; dom.customAudioUrlInput.readOnly = false; dom.saveCustomAudioBtn.classList.remove('hidden'); dom.removeFavoriteBtn.classList.add('hidden'); dom.customAudioShortNameInput.focus(); } else { dom.customUrlGroup.classList.add('hidden'); dom.saveCustomAudioBtn.classList.add('hidden'); dom.customAudioShortNameInput.value = ""; dom.customAudioUrlInput.value = ""; if (selectedValue === "default") { dom.removeFavoriteBtn.classList.add('hidden'); } else { const selectedPref = audioPreferences.find(p => p.id === selectedValue); if (selectedPref) { dom.removeFavoriteBtn.classList.remove('hidden'); } else { dom.removeFavoriteBtn.classList.add('hidden'); } } } };
-        const applyAudioChoice = async (preferenceId) => { /* ... Jūsu esošais kods ... */ let urlToLoad; let statusName; if (preferenceId === "default" || !preferenceId) { urlToLoad = DEFAULT_AUDIO_URL; statusName = "Default Sound"; preferenceId = "default"; } else { const pref = audioPreferences.find(p => p.id === preferenceId); if (pref) { urlToLoad = pref.url; statusName = utils.sanitizeHTML(pref.name); } else { console.warn(`Audio preference ID "${preferenceId}" not found during apply. Reverting to default.`); urlToLoad = DEFAULT_AUDIO_URL; statusName = "Default Sound"; preferenceId = "default"; } } if (dom.timerAudio.src !== urlToLoad) { dom.timerAudio.src = urlToLoad; dom.timerAudio.load(); } else if ((!dom.timerAudio.src || dom.timerAudio.src === window.location.href) && urlToLoad) { dom.timerAudio.src = urlToLoad; dom.timerAudio.load(); } if(firebaseInitializedSuccessfully) await setActiveAudioPreferenceIdInFirebase(preferenceId); dom.audioUrlStatus.innerHTML = `<span class="info">Currently using: ${statusName}</span>`; console.log(`Audio choice applied: ${preferenceId} (${statusName})`); if (isTimerVisible || audioUnlocked) { unlockAudioContext(); } };
+        async function loadAudioPreferencesFromFirebase() { if (!db) { audioPreferences = []; return; } try { const prefsCollection = collection(db, AUDIO_PREFERENCES_COLLECTION); const prefsQuery = query(prefsCollection, orderBy("name")); const snapshot = await getDocs(prefsQuery); audioPreferences = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); } catch (error) { console.error("Error loading audio preferences:", error); dom.audioUrlStatus.innerHTML = `<span class="error">Failed to load audio list: ${error.message}</span>`; audioPreferences = []; } }
+        async function saveAudioPreferenceToFirebase(name, url) { if (!db) return null; name = name.trim(); url = url.trim(); const existingByName = audioPreferences.find(p => p.name.toLowerCase() === name.toLowerCase()); if (existingByName) { dom.audioUrlStatus.innerHTML = `<span class="error">A sound with the name "${utils.sanitizeHTML(name)}" already exists. Please choose a different name.</span>`; return null; } const existingByUrl = audioPreferences.find(p => p.url === url); if (existingByUrl) { dom.audioUrlStatus.innerHTML = `<span class="info">This URL is already saved as "${utils.sanitizeHTML(existingByUrl.name)}". To use it, select it from the list.</span>`; return null; } try { const docRef = await addDoc(collection(db, AUDIO_PREFERENCES_COLLECTION), { name: name, url: url, createdAt: serverTimestamp() }); const newPref = { id: docRef.id, name, url, createdAt: Timestamp.now() }; audioPreferences.push(newPref); audioPreferences.sort((a, b) => a.name.localeCompare(b.name)); return newPref; } catch (error) { console.error("Error saving audio preference:", error); dom.audioUrlStatus.innerHTML = `<span class="error">Failed to save sound: ${error.message}</span>`; return null; } }
+        async function getActiveAudioPreferenceIdFromFirebase() { if (!db) return "default"; try { const configDocRef = doc(db, APP_CONFIG_COLLECTION, TIMER_SETTINGS_DOC_ID); const docSnap = await getDoc(configDocRef); if (docSnap.exists() && docSnap.data().activeAudioPreferenceId) { return docSnap.data().activeAudioPreferenceId; } return "default"; } catch (error) { console.error("Error getting active audio preference:", error); return "default"; } }
+        async function setActiveAudioPreferenceIdInFirebase(preferenceId) { if (!db) return; currentActiveAudioPreferenceId = preferenceId; try { const configDocRef = doc(db, APP_CONFIG_COLLECTION, TIMER_SETTINGS_DOC_ID); await setDoc(configDocRef, { activeAudioPreferenceId: preferenceId }, { merge: true }); } catch (error) { console.error("Error setting active audio preference:", error); dom.audioUrlStatus.innerHTML = `<span class="error">Failed to save active sound choice: ${error.message}</span>`; } }
+        const populateAudioSourceSelect = () => { const activeId = currentActiveAudioPreferenceId; dom.audioSourceSelect.innerHTML = ''; const defaultOption = new Option("Default Sound", "default"); dom.audioSourceSelect.add(defaultOption); audioPreferences.forEach(pref => { const option = new Option(utils.sanitizeHTML(pref.name), pref.id); dom.audioSourceSelect.add(option); }); const customNewOption = new Option("Add New Custom Sound...", "custom_new"); dom.audioSourceSelect.add(customNewOption); if (activeId !== "default" && !audioPreferences.some(p => p.id === activeId)) { console.warn(`Stale activeAudioPreferenceId '${activeId}' found. Reverting to default.`); currentActiveAudioPreferenceId = "default"; if(firebaseInitializedSuccessfully) setActiveAudioPreferenceIdInFirebase("default"); dom.audioSourceSelect.value = "default"; } else { dom.audioSourceSelect.value = activeId || "default"; } };
+        const updateCustomAudioUI = () => { const selectedValue = dom.audioSourceSelect.value; if (selectedValue === "custom_new") { dom.customUrlGroup.classList.remove('hidden'); dom.customAudioShortNameInput.value = ""; dom.customAudioUrlInput.value = ""; dom.customAudioShortNameInput.readOnly = false; dom.customAudioUrlInput.readOnly = false; dom.saveCustomAudioBtn.classList.remove('hidden'); dom.removeFavoriteBtn.classList.add('hidden'); dom.customAudioShortNameInput.focus(); } else { dom.customUrlGroup.classList.add('hidden'); dom.saveCustomAudioBtn.classList.add('hidden'); dom.customAudioShortNameInput.value = ""; dom.customAudioUrlInput.value = ""; if (selectedValue === "default") { dom.removeFavoriteBtn.classList.add('hidden'); } else { const selectedPref = audioPreferences.find(p => p.id === selectedValue); if (selectedPref) { dom.removeFavoriteBtn.classList.remove('hidden'); } else { dom.removeFavoriteBtn.classList.add('hidden'); } } } };
+        const applyAudioChoice = async (preferenceId) => { let urlToLoad; let statusName; if (preferenceId === "default" || !preferenceId) { urlToLoad = DEFAULT_AUDIO_URL; statusName = "Default Sound"; preferenceId = "default"; } else { const pref = audioPreferences.find(p => p.id === preferenceId); if (pref) { urlToLoad = pref.url; statusName = utils.sanitizeHTML(pref.name); } else { console.warn(`Audio preference ID "${preferenceId}" not found during apply. Reverting to default.`); urlToLoad = DEFAULT_AUDIO_URL; statusName = "Default Sound"; preferenceId = "default"; } } if (dom.timerAudio.src !== urlToLoad) { dom.timerAudio.src = urlToLoad; dom.timerAudio.load(); } else if ((!dom.timerAudio.src || dom.timerAudio.src === window.location.href) && urlToLoad) { dom.timerAudio.src = urlToLoad; dom.timerAudio.load(); } if(firebaseInitializedSuccessfully) await setActiveAudioPreferenceIdInFirebase(preferenceId); dom.audioUrlStatus.innerHTML = `<span class="info">Currently using: ${statusName}</span>`; console.log(`Audio choice applied: ${preferenceId} (${statusName})`); if (isTimerVisible || audioUnlocked) { unlockAudioContext(); } };
 
         // --- Firebase Data Functions ---
         const loadData = async () => {
@@ -311,7 +322,6 @@
                 dom.noPlayersForScoringMsg.classList.remove('hidden');
                 dom.noWinsTodayMsg.textContent = "Error: Database unavailable.";
                 dom.noWinsTodayMsg.classList.remove('hidden');
-                // renderApp(); // Called in finally
                 return;
             }
             console.log("loadData: Attempting to load data from Firestore...");
@@ -346,49 +356,321 @@
                 dom.noPlayersForScoringMsg.textContent = "Error loading players.";
                 dom.noWinsTodayMsg.textContent = "Error loading wins.";
             } finally {
-                renderApp(); // Always render to update UI based on loaded data or error state
+                renderApp(); 
             }
         };
         const addPlayer = async (name) => { if (!firebaseInitializedSuccessfully || !db) { alert("Database connection error. Cannot add player."); return; } const tN = name.trim(); if (!tN) { dom.addPlayerError.textContent = "Name empty."; return; } if (players.some(p => p.name.toLowerCase() === tN.toLowerCase())) { dom.addPlayerError.textContent = "Name exists."; return; } dom.addPlayerError.textContent = ""; dom.addPlayerBtn.disabled = true; try { const dR = await addDoc(collection(db, "players"), { name: tN }); players.push({ id: dR.id, name: tN }); players.sort((a, b) => a.name.localeCompare(b.name)); renderApp(); dom.newPlayerNameInput.value = ''; if (getStoredGeminiApiKey()) handleGetGeminiInsight(false); } catch (error) { console.error("Error adding player:", error); dom.addPlayerError.textContent = `Failed to add player: ${error.message}`; } finally { dom.addPlayerBtn.disabled = false; } };
-        const deletePlayer = async (playerId) => { /* ... Jūsu esošais kods ... */ if (!firebaseInitializedSuccessfully || !db) { alert("Database connection error. Cannot delete player."); return; } const p = players.find(pl => pl.id === playerId); if (!p || !confirm(`Delete ${utils.sanitizeHTML(p.name)}? Wins remain as 'Unknown'.`)) return; const delBtn = dom.playerListManagementUl.querySelector(`.player-management-entry[data-player-id="${playerId}"] .delete-player-btn`); if (delBtn) delBtn.disabled = true; try { await deleteDoc(doc(db, "players", playerId)); players = players.filter(pl => pl.id !== playerId); renderApp(); if (getStoredGeminiApiKey()) handleGetGeminiInsight(false); } catch (error) { console.error("Error deleting player:", error); alert(`Failed: ${error.message}`); if (delBtn) delBtn.disabled = false; } };
-        const renamePlayer = async (playerId, newName) => { /* ... Jūsu esošais kods ... */ if (!firebaseInitializedSuccessfully || !db) { alert("Database connection error. Cannot rename player."); return false; } const tN = newName.trim(); if (!tN) { alert("Name empty."); return false; } if (players.some(p => p.id !== playerId && p.name.toLowerCase() === tN.toLowerCase())) { alert("Name exists."); return false; } const pI = players.findIndex(p => p.id === playerId); if (pI === -1) return false; const entry = dom.playerListManagementUl.querySelector(`.player-management-entry[data-player-id="${playerId}"]`); const saveBtn = entry?.querySelector('.save-rename-btn'); const cancelBtn = entry?.querySelector('.cancel-rename-btn'); if(saveBtn) saveBtn.disabled = true; if(cancelBtn) cancelBtn.disabled = true; try { await updateDoc(doc(db, "players", playerId), { name: tN }); players[pI].name = tN; players.sort((a, b) => a.name.localeCompare(b.name)); renderApp(); if (getStoredGeminiApiKey()) handleGetGeminiInsight(false); return true; } catch (error) { console.error("Error renaming player:", error); alert(`Failed: ${error.message}`); if(saveBtn) saveBtn.disabled = false; if(cancelBtn) cancelBtn.disabled = false; return false; } };
-        const recordWin = async (playerId) => { /* ... Jūsu esošais kods ... */ if (!firebaseInitializedSuccessfully || !db) { alert("Database connection error. Cannot record win."); return; } const player = players.find(pl => pl.id === playerId); if (!player) return; const winButton = dom.scoreTrackingListUl.querySelector(`button.add-win-btn[data-player-id="${playerId}"]`); const playerInfoDiv = dom.scoreTrackingListUl.querySelector(`li[data-player-id="${playerId}"] .player-info`); if (winButton) winButton.disabled = true; const existingFeedback = playerInfoDiv?.querySelector('.win-feedback'); if (existingFeedback) existingFeedback.remove(); try { const docRef = await addDoc(collection(db, "wins"), { playerId: playerId, timestamp: serverTimestamp() }); const newWin = { id: docRef.id, playerId: playerId, timestamp: Timestamp.now() }; wins.unshift(newWin); const playerName = utils.sanitizeHTML(player.name); const feedbackSpan = document.createElement('span'); feedbackSpan.className = 'win-feedback'; feedbackSpan.textContent = `Win added for ${playerName}!`; if (playerInfoDiv) { playerInfoDiv.appendChild(feedbackSpan); setTimeout(() => { feedbackSpan.remove(); }, 3000); } renderTodaysWinsList(); renderDashboard(); if (getStoredGeminiApiKey()) handleGetGeminiInsight(false); } catch (error) { console.error("Error recording win:", error); alert(`Failed to record win: ${error.message}`); } finally { setTimeout(() => { if (winButton) winButton.disabled = false; }, 500); } };
-        const deleteWin = async (winId) => { /* ... Jūsu esošais kods ... */ if (!firebaseInitializedSuccessfully || !db) { alert("Database connection error. Cannot delete win."); return; } const wI = wins.findIndex(w => w.id === winId); if (wI === -1) return; const wD = wins[wI]; if (!wD.timestamp || typeof wD.timestamp.toDate !== 'function') return; const pN = players.find(p=>p.id === wD.playerId)?.name ?? 'Unknown Player'; if (!confirm(`Delete win for ${utils.sanitizeHTML(pN)} at ${utils.formatTime(wD.timestamp)}?`)) return; const delBtn = dom.todaysWinsListUl.querySelector(`li[data-win-id="${winId}"] .delete-win-btn`); if(delBtn) delBtn.disabled = true; try { await deleteDoc(doc(db, "wins", winId)); wins.splice(wI, 1); renderTodaysWinsList(); renderDashboard(); if (getStoredGeminiApiKey()) handleGetGeminiInsight(false); } catch (error) { console.error("Error deleting win:", error); alert(`Failed: ${error.message}`); if(delBtn) delBtn.disabled = false; } };
-        const getWinsForPeriodLocal = (period, baseDate = new Date()) => { /* ... Jūsu esošais kods ... */ const { start, end } = utils.getPeriodRange(period, baseDate); const sT = start.getTime(); const eT = end.getTime(); return wins.filter(w => { if (!w.timestamp || typeof w.timestamp.toDate !== 'function') return false; const wT = w.timestamp.toDate().getTime(); return wT >= sT && wT <= eT; }); };
-        const getWinsForYearLocal = (year) => { /* ... Jūsu esošais kods ... */ const s = new Date(year, 0, 1); const e = new Date(year, 11, 31, 23, 59, 59, 999); const sT = s.getTime(); const eT = e.getTime(); return wins.filter(w => { if (!w.timestamp || typeof w.timestamp.toDate !== 'function') return false; const wT = w.timestamp.toDate().getTime(); return wT >= sT && wT <= eT; }); };
+        const deletePlayer = async (playerId) => { if (!firebaseInitializedSuccessfully || !db) { alert("Database connection error. Cannot delete player."); return; } const p = players.find(pl => pl.id === playerId); if (!p || !confirm(`Delete ${utils.sanitizeHTML(p.name)}? Wins remain as 'Unknown'.`)) return; const delBtn = dom.playerListManagementUl.querySelector(`.player-management-entry[data-player-id="${playerId}"] .delete-player-btn`); if (delBtn) delBtn.disabled = true; try { await deleteDoc(doc(db, "players", playerId)); players = players.filter(pl => pl.id !== playerId); renderApp(); if (getStoredGeminiApiKey()) handleGetGeminiInsight(false); } catch (error) { console.error("Error deleting player:", error); alert(`Failed: ${error.message}`); if (delBtn) delBtn.disabled = false; } };
+        const renamePlayer = async (playerId, newName) => { if (!firebaseInitializedSuccessfully || !db) { alert("Database connection error. Cannot rename player."); return false; } const tN = newName.trim(); if (!tN) { alert("Name empty."); return false; } if (players.some(p => p.id !== playerId && p.name.toLowerCase() === tN.toLowerCase())) { alert("Name exists."); return false; } const pI = players.findIndex(p => p.id === playerId); if (pI === -1) return false; const entry = dom.playerListManagementUl.querySelector(`.player-management-entry[data-player-id="${playerId}"]`); const saveBtn = entry?.querySelector('.save-rename-btn'); const cancelBtn = entry?.querySelector('.cancel-rename-btn'); if(saveBtn) saveBtn.disabled = true; if(cancelBtn) cancelBtn.disabled = true; try { await updateDoc(doc(db, "players", playerId), { name: tN }); players[pI].name = tN; players.sort((a, b) => a.name.localeCompare(b.name)); renderApp(); if (getStoredGeminiApiKey()) handleGetGeminiInsight(false); return true; } catch (error) { console.error("Error renaming player:", error); alert(`Failed: ${error.message}`); if(saveBtn) saveBtn.disabled = false; if(cancelBtn) cancelBtn.disabled = false; return false; } };
+        const recordWin = async (playerId) => { if (!firebaseInitializedSuccessfully || !db) { alert("Database connection error. Cannot record win."); return; } const player = players.find(pl => pl.id === playerId); if (!player) return; const winButton = dom.scoreTrackingListUl.querySelector(`button.add-win-btn[data-player-id="${playerId}"]`); const playerInfoDiv = dom.scoreTrackingListUl.querySelector(`li[data-player-id="${playerId}"] .player-info`); if (winButton) winButton.disabled = true; const existingFeedback = playerInfoDiv?.querySelector('.win-feedback'); if (existingFeedback) existingFeedback.remove(); try { const docRef = await addDoc(collection(db, "wins"), { playerId: playerId, timestamp: serverTimestamp() }); const newWin = { id: docRef.id, playerId: playerId, timestamp: Timestamp.now() }; wins.unshift(newWin); const playerName = utils.sanitizeHTML(player.name); const feedbackSpan = document.createElement('span'); feedbackSpan.className = 'win-feedback'; feedbackSpan.textContent = `Win added for ${playerName}!`; if (playerInfoDiv) { playerInfoDiv.appendChild(feedbackSpan); setTimeout(() => { feedbackSpan.remove(); }, 3000); } renderTodaysWinsList(); renderDashboard(); if (getStoredGeminiApiKey()) handleGetGeminiInsight(false); } catch (error) { console.error("Error recording win:", error); alert(`Failed to record win: ${error.message}`); } finally { setTimeout(() => { if (winButton) winButton.disabled = false; }, 500); } };
+        const deleteWin = async (winId) => { if (!firebaseInitializedSuccessfully || !db) { alert("Database connection error. Cannot delete win."); return; } const wI = wins.findIndex(w => w.id === winId); if (wI === -1) return; const wD = wins[wI]; if (!wD.timestamp || typeof wD.timestamp.toDate !== 'function') return; const pN = players.find(p=>p.id === wD.playerId)?.name ?? 'Unknown Player'; if (!confirm(`Delete win for ${utils.sanitizeHTML(pN)} at ${utils.formatTime(wD.timestamp)}?`)) return; const delBtn = dom.todaysWinsListUl.querySelector(`li[data-win-id="${winId}"] .delete-win-btn`); if(delBtn) delBtn.disabled = true; try { await deleteDoc(doc(db, "wins", winId)); wins.splice(wI, 1); renderTodaysWinsList(); renderDashboard(); if (getStoredGeminiApiKey()) handleGetGeminiInsight(false); } catch (error) { console.error("Error deleting win:", error); alert(`Failed: ${error.message}`); if(delBtn) delBtn.disabled = false; } };
+        const getWinsForPeriodLocal = (period, baseDate = new Date()) => { const { start, end } = utils.getPeriodRange(period, baseDate); const sT = start.getTime(); const eT = end.getTime(); return wins.filter(w => { if (!w.timestamp || typeof w.timestamp.toDate !== 'function') return false; const wT = w.timestamp.toDate().getTime(); return wT >= sT && wT <= eT; }); };
+        const getWinsForYearLocal = (year) => { const s = new Date(year, 0, 1); const e = new Date(year, 11, 31, 23, 59, 59, 999); const sT = s.getTime(); const eT = e.getTime(); return wins.filter(w => { if (!w.timestamp || typeof w.timestamp.toDate !== 'function') return false; const wT = w.timestamp.toDate().getTime(); return wT >= sT && wT <= eT; }); };
 
         // --- Rendering Functions ---
-        const renderPlayerManagementList = () => { /* ... Jūsu esošais kods ... */ dom.playerListManagementUl.innerHTML = ''; dom.noPlayersManagedMsg.classList.toggle('hidden', players.length > 0 || !firebaseInitializedSuccessfully); if (players.length === 0 && firebaseInitializedSuccessfully) return; if(!firebaseInitializedSuccessfully && dom.playerListManagementUl) { dom.playerListManagementUl.innerHTML = '<p class="no-data">Player management unavailable (database error).</p>'; return; } players.forEach(p => { const li = document.createElement('li'); li.className = 'player-management-entry'; li.dataset.playerId = p.id; const sN = utils.sanitizeHTML(p.name); li.innerHTML = ` <span class="player-name-display">${sN}</span> <div class="rename-controls hidden"> <input type="text" class="rename-input" value="${sN}" aria-label="New name for ${sN}"> <button class="save-rename-btn icon-button" aria-label="Save rename">✔️</button> <button class="cancel-rename-btn icon-button secondary" aria-label="Cancel rename">❌</button> </div> <div class="action-buttons"> <button class="rename-btn icon-button secondary" aria-label="Rename ${sN}">✏️ Rename</button> <button class="delete-player-btn icon-button danger" aria-label="Delete ${sN}">🗑️ Delete</button> </div> `; dom.playerListManagementUl.appendChild(li); }); };
-        const renderScoreTrackingList = () => { /* ... Jūsu esošais kods ... */ dom.scoreTrackingListUl.innerHTML = ''; dom.noPlayersForScoringMsg.classList.toggle('hidden', players.length > 0 || !firebaseInitializedSuccessfully); if (players.length === 0 && firebaseInitializedSuccessfully) { dom.noPlayersForScoringMsg.textContent = "Add players to track wins."; return; } if(!firebaseInitializedSuccessfully && dom.scoreTrackingListUl) { dom.scoreTrackingListUl.innerHTML = '<p class="no-data">Score tracking unavailable (database error).</p>'; dom.noPlayersForScoringMsg.classList.add('hidden'); return; } players.forEach(p => { const li = document.createElement('li'); li.dataset.playerId = p.id; const sN = utils.sanitizeHTML(p.name); li.innerHTML = ` <div class="player-info"> <span class="player-name">${sN}</span> </div> <button class="add-win-btn" data-player-id="${p.id}">+ Win</button> `; dom.scoreTrackingListUl.appendChild(li); }); };
-        const renderTodaysWinsList = () => { /* ... Jūsu esošais kods ... */ dom.todaysWinsListUl.innerHTML = ''; dom.todaysSummaryDiv.innerHTML = ''; dom.todaysSummaryDiv.classList.add('hidden'); const todayStr = utils.getTodayDateString(); dom.todayDateDisplay.textContent = todayStr; if (!firebaseInitializedSuccessfully) { dom.noWinsTodayMsg.textContent="Win list unavailable (database error)."; dom.noWinsTodayMsg.classList.remove('hidden'); return;} const todaysWins = wins.filter(w => w.timestamp?.toDate().toDateString() === todayStr); dom.noWinsTodayMsg.classList.toggle('hidden', todaysWins.length > 0); if (todaysWins.length > 0) { const winsByPlayerToday = todaysWins.reduce((acc, win) => { acc[win.playerId] = (acc[win.playerId] || 0) + 1; return acc; }, {}); const summaryItems = []; const sortedPlayerIds = Object.keys(winsByPlayerToday).sort((a, b) => { const playerA = players.find(p => p.id === a); const playerB = players.find(p => p.id === b); const nameA = playerA ? playerA.name : 'Unknown'; const nameB = playerB ? playerB.name : 'Unknown'; return nameA.localeCompare(nameB); }); sortedPlayerIds.forEach(playerId => { const count = winsByPlayerToday[playerId]; const player = players.find(p => p.id === playerId); const playerName = player ? utils.sanitizeHTML(player.name) : 'Unknown Player'; summaryItems.push(`<span>${playerName}: ${utils.pluralize(count, 'win')}</span>`); }); if (summaryItems.length > 0) { dom.todaysSummaryDiv.innerHTML = `<strong>Summary:</strong> ${summaryItems.join(' ')}`; dom.todaysSummaryDiv.classList.remove('hidden'); } todaysWins.forEach(w => { const player = players.find(pl => pl.id === w.playerId); const playerName = player ? utils.sanitizeHTML(player.name) : 'Unknown Player'; const li = document.createElement('li'); li.dataset.winId = w.id; li.innerHTML = ` <span class="player-name">${playerName}</span> <span class="win-timestamp">${utils.formatTime(w.timestamp)}</span> <button class="delete-win-btn icon-button danger" aria-label="Delete this win">🗑️</button> `; dom.todaysWinsListUl.appendChild(li); }); } };
-        const renderDashboard = () => { /* ... Jūsu esošais kods ... */ dom.dashboardControls.querySelectorAll('button[data-period]').forEach(b => { b.classList.toggle('active', b.dataset.period === currentDashboardPeriod); }); dom.playerViewBtn.classList.toggle('active', currentView === 'player'); dom.monthlyViewBtn.classList.toggle('active', currentView === 'monthly'); dom.winChartContainer.classList.toggle('hidden', currentView !== 'player'); dom.monthlyChartContainer.classList.toggle('hidden', currentView === 'player'); if (currentView === 'player') { renderPlayerWinsChart(currentDashboardPeriod, currentDisplayDate); } else if (currentView === 'monthly') { renderMonthlyBreakdownChart(currentDisplayDate.getFullYear()); } };
-        const renderPlayerWinsChart = (period, displayDate) => { /* ... Jūsu esošais kods ... */ if (playerWinChartInstance) { playerWinChartInstance.destroy(); playerWinChartInstance = null; } if (!firebaseInitializedSuccessfully) {dom.noChartDataMsg.textContent="Charts unavailable (database error)."; dom.noChartDataMsg.classList.remove('hidden'); dom.playerWinCanvas.classList.add('hidden'); return;} const { start, end } = utils.getPeriodRange(period, displayDate); let chartTitleText = ''; const today = new Date(); today.setHours(0,0,0,0); const currentPeriodRange = utils.getPeriodRange(period, today); const isCurrentPeriod = currentPeriodRange.start.getTime() === start.getTime(); switch (period) { case 'week': chartTitleText = isCurrentPeriod ? 'Wins This Week' : `Week of ${start.toLocaleDateString()}`; break; case 'month': const monthName = utils.getFullMonthName(displayDate.getMonth()); chartTitleText = isCurrentPeriod ? `Wins This ${monthName}` : `Wins ${monthName} ${displayDate.getFullYear()}`; break; case 'year': chartTitleText = isCurrentPeriod ? `Wins This Year (${displayDate.getFullYear()})` : `Wins ${displayDate.getFullYear()}`; break; } dom.winChartTitle.textContent = chartTitleText; dom.prevPeriodBtn.classList.remove('hidden'); dom.nextPeriodBtn.classList.remove('hidden'); const endOfToday = new Date(); endOfToday.setHours(23,59,59,999); dom.nextPeriodBtn.disabled = end.getTime() >= endOfToday.getTime(); const periodWins = getWinsForPeriodLocal(period, displayDate); const totalWinsCount = periodWins.length; dom.totalPlayerWinsDisplay.textContent = `Total Wins: ${totalWinsCount}`; dom.totalPlayerWinsDisplay.classList.remove('hidden'); const hasPlayers = players.length > 0; const hasData = totalWinsCount > 0; let playerData = []; if (hasPlayers) { const winsByPlayer = players.reduce((acc, p) => { acc[p.id] = { name: p.name, count: 0 }; return acc; }, {}); periodWins.forEach(w => { if (w.playerId && winsByPlayer[w.playerId]) { winsByPlayer[w.playerId].count++; } }); playerData = Object.values(winsByPlayer); playerData.sort((a, b) => a.name.localeCompare(b.name)); } const showChart = hasPlayers && hasData; dom.playerWinCanvas.classList.toggle('hidden', !showChart); dom.noChartDataMsg.classList.toggle('hidden', showChart); if (!hasPlayers) { dom.noChartDataMsg.textContent = "Add players to see statistics."; dom.totalPlayerWinsDisplay.classList.add('hidden'); } else if (!hasData) { dom.noChartDataMsg.textContent = "No wins recorded for this period."; } if (showChart) { const ctx = dom.playerWinCanvas.getContext('2d'); if (!ctx) return; const labels = playerData.map(p => p.name); const dataCounts = playerData.map(p => p.count); playerWinChartInstance = new Chart(ctx, { type: 'bar', data: { labels: labels, datasets: [{ label: 'Wins', data: dataCounts, backgroundColor: '#219ebc', borderColor: '#1a7f9a', borderWidth: 1 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(c) { let l = c.dataset.label || ''; if (l) { l += ': '; } if (c.parsed.y !== null) { l += c.parsed.y + (c.parsed.y === 1 ? ' win' : ' wins'); } return l; } } } } } }); } };
-        const renderMonthlyBreakdownChart = (year) => { /* ... Jūsu esošais kods ... */ if (monthlyChartInstance) { monthlyChartInstance.destroy(); monthlyChartInstance = null; } if (!firebaseInitializedSuccessfully) {dom.noMonthlyChartDataMsg.textContent="Charts unavailable (database error)."; dom.noMonthlyChartDataMsg.classList.remove('hidden'); dom.monthlyWinsCanvas.classList.add('hidden'); return;} dom.monthlyChartTitle.textContent = `Monthly Winners for ${year}`; dom.nextYearBtn.disabled = year >= new Date().getFullYear(); const yearWins = getWinsForYearLocal(year); const totalWinsCount = yearWins.length; const hasData = totalWinsCount > 0; dom.totalMonthlyWinsDisplay.textContent = `Total Wins: ${totalWinsCount}`; dom.totalMonthlyWinsDisplay.classList.remove('hidden'); let monthlyResults = []; let overallMaxWinningScore = 0; if(hasData) { const monthlyPlayerWins = {}; yearWins.forEach(win => { if (win.timestamp && typeof win.timestamp.toDate === 'function' && win.playerId) { const mI = win.timestamp.toDate().getMonth(); monthlyPlayerWins[mI] = monthlyPlayerWins[mI] || {}; monthlyPlayerWins[mI][win.playerId] = (monthlyPlayerWins[mI][win.playerId] || 0) + 1; } }); for (let i = 0; i < 12; i++) { const monthData = monthlyPlayerWins[i]; let winners = []; let maxScore = 0; if (monthData && Object.keys(monthData).length > 0) { maxScore = Math.max(...Object.values(monthData)); if (maxScore > overallMaxWinningScore) overallMaxWinningScore = maxScore; winners = Object.entries(monthData).filter(([_, score]) => score === maxScore).map(([playerId, _]) => utils.sanitizeHTML(players.find(p => p.id === playerId)?.name ?? 'Unknown')); } monthlyResults.push({ monthIndex: i, winnerNames: winners, winningScore: maxScore }); } } else { for (let i = 0; i < 12; i++) monthlyResults.push({ monthIndex: i, winnerNames: [], winningScore: 0 }); } dom.monthlyWinsCanvas.classList.toggle('hidden', !hasData); dom.noMonthlyChartDataMsg.classList.toggle('hidden', hasData); if (!hasData) dom.noMonthlyChartDataMsg.textContent = `No wins recorded for ${year}.`; if(hasData) { const ctx = dom.monthlyWinsCanvas.getContext('2d'); if (!ctx) return; const labels = monthlyResults.map(r => utils.getMonthName(r.monthIndex)); const dataScores = monthlyResults.map(r => r.winningScore); const yAxisMax = Math.max(3, overallMaxWinningScore + 2); monthlyChartInstance = new Chart(ctx, { type: 'bar', data: { labels: labels, datasets: [{ label: 'Winning Score', data: dataScores, backgroundColor: '#fdc500', borderColor: '#e8b700', borderWidth: 1 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, max: yAxisMax, ticks: { stepSize: 1, precision: 0 } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { title: (tooltipItems) => `${utils.getFullMonthName(tooltipItems[0].dataIndex)} ${year}`, label: (context) => { const index = context.dataIndex; const result = monthlyResults[index]; let winnerLabel = (!result || result.winnerNames.length === 0) ? 'Winner: N/A' : (result.winnerNames.length === 1 ? `Winner: ${result.winnerNames[0]}` : `Tie: ${result.winnerNames.join(', ')}`); const scoreLabel = `Score: ${context.parsed.y}`; return [winnerLabel, scoreLabel]; } } }, datalabels: { display: (context) => context.dataset.data[context.dataIndex] > 0, anchor: 'end', align: 'top', offset: -2, color: '#555', font: { size: 10, weight: 'bold' }, formatter: (value, context) => { const index = context.dataIndex; const result = monthlyResults[index]; if (!result || result.winnerNames.length === 0) return ''; let name = result.winnerNames.length === 1 ? result.winnerNames[0] : 'Tie'; return name.length > 8 ? name.substring(0, 7) + '…' : name; } } } } }); } };
+        const renderPlayerManagementList = () => { dom.playerListManagementUl.innerHTML = ''; dom.noPlayersManagedMsg.classList.toggle('hidden', players.length > 0 || !firebaseInitializedSuccessfully); if (players.length === 0 && firebaseInitializedSuccessfully) return; if(!firebaseInitializedSuccessfully && dom.playerListManagementUl) { dom.playerListManagementUl.innerHTML = '<p class="no-data">Player management unavailable (database error).</p>'; return; } players.forEach(p => { const li = document.createElement('li'); li.className = 'player-management-entry'; li.dataset.playerId = p.id; const sN = utils.sanitizeHTML(p.name); li.innerHTML = ` <span class="player-name-display">${sN}</span> <div class="rename-controls hidden"> <input type="text" class="rename-input" value="${sN}" aria-label="New name for ${sN}"> <button class="save-rename-btn icon-button" aria-label="Save rename">✔️</button> <button class="cancel-rename-btn icon-button secondary" aria-label="Cancel rename">❌</button> </div> <div class="action-buttons"> <button class="rename-btn icon-button secondary" aria-label="Rename ${sN}">✏️ Rename</button> <button class="delete-player-btn icon-button danger" aria-label="Delete ${sN}">🗑️ Delete</button> </div> `; dom.playerListManagementUl.appendChild(li); }); };
+        const renderScoreTrackingList = () => { dom.scoreTrackingListUl.innerHTML = ''; dom.noPlayersForScoringMsg.classList.toggle('hidden', players.length > 0 || !firebaseInitializedSuccessfully); if (players.length === 0 && firebaseInitializedSuccessfully) { dom.noPlayersForScoringMsg.textContent = "Add players to track wins."; return; } if(!firebaseInitializedSuccessfully && dom.scoreTrackingListUl) { dom.scoreTrackingListUl.innerHTML = '<p class="no-data">Score tracking unavailable (database error).</p>'; dom.noPlayersForScoringMsg.classList.add('hidden'); return; } players.forEach(p => { const li = document.createElement('li'); li.dataset.playerId = p.id; const sN = utils.sanitizeHTML(p.name); li.innerHTML = ` <div class="player-info"> <span class="player-name">${sN}</span> </div> <button class="add-win-btn" data-player-id="${p.id}">+ Win</button> `; dom.scoreTrackingListUl.appendChild(li); }); };
+        const renderTodaysWinsList = () => { dom.todaysWinsListUl.innerHTML = ''; dom.todaysSummaryDiv.innerHTML = ''; dom.todaysSummaryDiv.classList.add('hidden'); const todayStr = utils.getTodayDateString(); dom.todayDateDisplay.textContent = todayStr; if (!firebaseInitializedSuccessfully) { dom.noWinsTodayMsg.textContent="Win list unavailable (database error)."; dom.noWinsTodayMsg.classList.remove('hidden'); return;} const todaysWins = wins.filter(w => w.timestamp?.toDate().toDateString() === todayStr); dom.noWinsTodayMsg.classList.toggle('hidden', todaysWins.length > 0); if (todaysWins.length > 0) { const winsByPlayerToday = todaysWins.reduce((acc, win) => { acc[win.playerId] = (acc[win.playerId] || 0) + 1; return acc; }, {}); const summaryItems = []; const sortedPlayerIds = Object.keys(winsByPlayerToday).sort((a, b) => { const playerA = players.find(p => p.id === a); const playerB = players.find(p => p.id === b); const nameA = playerA ? playerA.name : 'Unknown'; const nameB = playerB ? playerB.name : 'Unknown'; return nameA.localeCompare(nameB); }); sortedPlayerIds.forEach(playerId => { const count = winsByPlayerToday[playerId]; const player = players.find(p => p.id === playerId); const playerName = player ? utils.sanitizeHTML(player.name) : 'Unknown Player'; summaryItems.push(`<span>${playerName}: ${utils.pluralize(count, 'win')}</span>`); }); if (summaryItems.length > 0) { dom.todaysSummaryDiv.innerHTML = `<strong>Summary:</strong> ${summaryItems.join(' ')}`; dom.todaysSummaryDiv.classList.remove('hidden'); } todaysWins.forEach(w => { const player = players.find(pl => pl.id === w.playerId); const playerName = player ? utils.sanitizeHTML(player.name) : 'Unknown Player'; const li = document.createElement('li'); li.dataset.winId = w.id; li.innerHTML = ` <span class="player-name">${playerName}</span> <span class="win-timestamp">${utils.formatTime(w.timestamp)}</span> <button class="delete-win-btn icon-button danger" aria-label="Delete this win">🗑️</button> `; dom.todaysWinsListUl.appendChild(li); }); } };
+        const renderDashboard = () => { dom.dashboardControls.querySelectorAll('button[data-period]').forEach(b => { b.classList.toggle('active', b.dataset.period === currentDashboardPeriod); }); dom.playerViewBtn.classList.toggle('active', currentView === 'player'); dom.monthlyViewBtn.classList.toggle('active', currentView === 'monthly'); dom.winChartContainer.classList.toggle('hidden', currentView !== 'player'); dom.monthlyChartContainer.classList.toggle('hidden', currentView === 'player'); if (currentView === 'player') { renderPlayerWinsChart(currentDashboardPeriod, currentDisplayDate); } else if (currentView === 'monthly') { renderMonthlyBreakdownChart(currentDisplayDate.getFullYear()); } };
+        const renderPlayerWinsChart = (period, displayDate) => { if (playerWinChartInstance) { playerWinChartInstance.destroy(); playerWinChartInstance = null; } if (!firebaseInitializedSuccessfully) {dom.noChartDataMsg.textContent="Charts unavailable (database error)."; dom.noChartDataMsg.classList.remove('hidden'); dom.playerWinCanvas.classList.add('hidden'); return;} const { start, end } = utils.getPeriodRange(period, displayDate); let chartTitleText = ''; const today = new Date(); today.setHours(0,0,0,0); const currentPeriodRange = utils.getPeriodRange(period, today); const isCurrentPeriod = currentPeriodRange.start.getTime() === start.getTime(); switch (period) { case 'week': chartTitleText = isCurrentPeriod ? 'Wins This Week' : `Week of ${start.toLocaleDateString()}`; break; case 'month': const monthName = utils.getFullMonthName(displayDate.getMonth()); chartTitleText = isCurrentPeriod ? `Wins This ${monthName}` : `Wins ${monthName} ${displayDate.getFullYear()}`; break; case 'year': chartTitleText = isCurrentPeriod ? `Wins This Year (${displayDate.getFullYear()})` : `Wins ${displayDate.getFullYear()}`; break; } dom.winChartTitle.textContent = chartTitleText; dom.prevPeriodBtn.classList.remove('hidden'); dom.nextPeriodBtn.classList.remove('hidden'); const endOfToday = new Date(); endOfToday.setHours(23,59,59,999); dom.nextPeriodBtn.disabled = end.getTime() >= endOfToday.getTime(); const periodWins = getWinsForPeriodLocal(period, displayDate); const totalWinsCount = periodWins.length; dom.totalPlayerWinsDisplay.textContent = `Total Wins: ${totalWinsCount}`; dom.totalPlayerWinsDisplay.classList.remove('hidden'); const hasPlayers = players.length > 0; const hasData = totalWinsCount > 0; let playerData = []; if (hasPlayers) { const winsByPlayer = players.reduce((acc, p) => { acc[p.id] = { name: p.name, count: 0 }; return acc; }, {}); periodWins.forEach(w => { if (w.playerId && winsByPlayer[w.playerId]) { winsByPlayer[w.playerId].count++; } }); playerData = Object.values(winsByPlayer); playerData.sort((a, b) => a.name.localeCompare(b.name)); } const showChart = hasPlayers && hasData; dom.playerWinCanvas.classList.toggle('hidden', !showChart); dom.noChartDataMsg.classList.toggle('hidden', showChart); if (!hasPlayers) { dom.noChartDataMsg.textContent = "Add players to see statistics."; dom.totalPlayerWinsDisplay.classList.add('hidden'); } else if (!hasData) { dom.noChartDataMsg.textContent = "No wins recorded for this period."; } if (showChart) { const ctx = dom.playerWinCanvas.getContext('2d'); if (!ctx) return; const labels = playerData.map(p => p.name); const dataCounts = playerData.map(p => p.count); playerWinChartInstance = new Chart(ctx, { type: 'bar', data: { labels: labels, datasets: [{ label: 'Wins', data: dataCounts, backgroundColor: '#219ebc', borderColor: '#1a7f9a', borderWidth: 1 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(c) { let l = c.dataset.label || ''; if (l) { l += ': '; } if (c.parsed.y !== null) { l += c.parsed.y + (c.parsed.y === 1 ? ' win' : ' wins'); } return l; } } } } } }); } };
+        const renderMonthlyBreakdownChart = (year) => { if (monthlyChartInstance) { monthlyChartInstance.destroy(); monthlyChartInstance = null; } if (!firebaseInitializedSuccessfully) {dom.noMonthlyChartDataMsg.textContent="Charts unavailable (database error)."; dom.noMonthlyChartDataMsg.classList.remove('hidden'); dom.monthlyWinsCanvas.classList.add('hidden'); return;} dom.monthlyChartTitle.textContent = `Monthly Winners for ${year}`; dom.nextYearBtn.disabled = year >= new Date().getFullYear(); const yearWins = getWinsForYearLocal(year); const totalWinsCount = yearWins.length; const hasData = totalWinsCount > 0; dom.totalMonthlyWinsDisplay.textContent = `Total Wins: ${totalWinsCount}`; dom.totalMonthlyWinsDisplay.classList.remove('hidden'); let monthlyResults = []; let overallMaxWinningScore = 0; if(hasData) { const monthlyPlayerWins = {}; yearWins.forEach(win => { if (win.timestamp && typeof win.timestamp.toDate === 'function' && win.playerId) { const mI = win.timestamp.toDate().getMonth(); monthlyPlayerWins[mI] = monthlyPlayerWins[mI] || {}; monthlyPlayerWins[mI][win.playerId] = (monthlyPlayerWins[mI][win.playerId] || 0) + 1; } }); for (let i = 0; i < 12; i++) { const monthData = monthlyPlayerWins[i]; let winners = []; let maxScore = 0; if (monthData && Object.keys(monthData).length > 0) { maxScore = Math.max(...Object.values(monthData)); if (maxScore > overallMaxWinningScore) overallMaxWinningScore = maxScore; winners = Object.entries(monthData).filter(([_, score]) => score === maxScore).map(([playerId, _]) => utils.sanitizeHTML(players.find(p => p.id === playerId)?.name ?? 'Unknown')); } monthlyResults.push({ monthIndex: i, winnerNames: winners, winningScore: maxScore }); } } else { for (let i = 0; i < 12; i++) monthlyResults.push({ monthIndex: i, winnerNames: [], winningScore: 0 }); } dom.monthlyWinsCanvas.classList.toggle('hidden', !hasData); dom.noMonthlyChartDataMsg.classList.toggle('hidden', hasData); if (!hasData) dom.noMonthlyChartDataMsg.textContent = `No wins recorded for ${year}.`; if(hasData) { const ctx = dom.monthlyWinsCanvas.getContext('2d'); if (!ctx) return; const labels = monthlyResults.map(r => utils.getMonthName(r.monthIndex)); const dataScores = monthlyResults.map(r => r.winningScore); const yAxisMax = Math.max(3, overallMaxWinningScore + 2); monthlyChartInstance = new Chart(ctx, { type: 'bar', data: { labels: labels, datasets: [{ label: 'Winning Score', data: dataScores, backgroundColor: '#fdc500', borderColor: '#e8b700', borderWidth: 1 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, max: yAxisMax, ticks: { stepSize: 1, precision: 0 } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { title: (tooltipItems) => `${utils.getFullMonthName(tooltipItems[0].dataIndex)} ${year}`, label: (context) => { const index = context.dataIndex; const result = monthlyResults[index]; let winnerLabel = (!result || result.winnerNames.length === 0) ? 'Winner: N/A' : (result.winnerNames.length === 1 ? `Winner: ${result.winnerNames[0]}` : `Tie: ${result.winnerNames.join(', ')}`); const scoreLabel = `Score: ${context.parsed.y}`; return [winnerLabel, scoreLabel]; } } }, datalabels: { display: (context) => context.dataset.data[context.dataIndex] > 0, anchor: 'end', align: 'top', offset: -2, color: '#555', font: { size: 10, weight: 'bold' }, formatter: (value, context) => { const index = context.dataIndex; const result = monthlyResults[index]; if (!result || result.winnerNames.length === 0) return ''; let name = result.winnerNames.length === 1 ? result.winnerNames[0] : 'Tie'; return name.length > 8 ? name.substring(0, 7) + '…' : name; } } } } }); } };
         const renderApp = () => { renderPlayerManagementList(); renderScoreTrackingList(); renderTodaysWinsList(); renderDashboard(); console.log("renderApp: UI rendered/updated.");};
 
         // --- Timer Functions ---
-        const formatTimerTime = (totalSeconds) => { /* ... Jūsu esošais kods ... */ const minutes = Math.floor(totalSeconds / 60); const seconds = totalSeconds % 60; return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`; };
-        const updateTimerDisplay = () => { /* ... Jūsu esošais kods ... */ if(dom.timerDisplay) dom.timerDisplay.textContent = formatTimerTime(timerRemainingSeconds); };
-        const updateTimerFill = () => { /* ... Jūsu esošais kods ... */ if(dom.timerFill) {const percentage = (timerRemainingSeconds / TIMER_DURATION_SECONDS) * 100; dom.timerFill.style.height = `${percentage}%`; }};
-        const unlockAudioContext = () => { /* ... Jūsu esošais kods ... */ if (!dom.timerAudio || !dom.timerAudio.src || dom.timerAudio.readyState < 1) { console.warn("Audio not ready for unlock."); return; } const playPromise = dom.timerAudio.play(); if (playPromise !== undefined) { playPromise.then(() => { dom.timerAudio.pause(); if (!audioUnlocked) { console.log("Audio context unlocked."); audioUnlocked = true; } else { console.log("Audio context re-activated."); } }).catch(error => { if (error.name !== 'AbortError') { console.warn("Audio unlock/reactivation failed:", error); audioUnlocked = false; } else if (!audioUnlocked) { console.log("Audio unlocked (AbortError)."); audioUnlocked = true; } }); } };
-        const playBeepSound = () => { /* ... Jūsu esošais kods ... */ if (!dom.timerAudio || !dom.timerAudio.src) { console.warn("Timer audio source not set."); return; } if (!audioUnlocked) { console.warn("Audio context not unlocked, attempting to unlock for beep."); unlockAudioContext(); } if (dom.timerAudio.readyState >= 2) { dom.timerAudio.currentTime = 0; const playPromise = dom.timerAudio.play(); if (playPromise !== undefined) { playPromise.catch(error => { console.error("Timer audio playback failed:", error); audioUnlocked = false; }); } } else { console.warn(`Audio not ready (readyState: ${dom.timerAudio.readyState}). Loading.`); dom.timerAudio.load(); } };
-        const timerTick = () => { /* ... Jūsu esošais kods ... */ if (!isTimerVisible) { stopTimer(); return; } timerRemainingSeconds--; if (timerRemainingSeconds < 0) { playBeepSound(); timerRemainingSeconds = TIMER_DURATION_SECONDS; } updateTimerDisplay(); updateTimerFill(); timerTimeoutId = setTimeout(timerTick, 1000); };
-        const startTimer = () => { /* ... Jūsu esošais kods ... */ stopTimer(); isTimerVisible = true; timerRemainingSeconds = (timerRemainingSeconds > 0 && timerRemainingSeconds <= TIMER_DURATION_SECONDS) ? timerRemainingSeconds : TIMER_DURATION_SECONDS; updateTimerDisplay(); updateTimerFill(); timerTimeoutId = setTimeout(timerTick, 1000); };
-        const stopTimer = () => { /* ... Jūsu esošais kods ... */ if (timerTimeoutId) { clearTimeout(timerTimeoutId); timerTimeoutId = null; } };
-        const handleNextTimerClick = () => { /* ... Jūsu esošais kods ... */ unlockAudioContext(); stopTimer(); timerRemainingSeconds = TIMER_DURATION_SECONDS; updateTimerDisplay(); updateTimerFill(); setTimeout(playBeepSound, 50); startTimer(); };
-        const requestWakeLock = async () => { /* ... Jūsu esošais kods ... */ if ('wakeLock' in navigator) { try { wakeLockSentinel = await navigator.wakeLock.request('screen'); wakeLockSentinel.addEventListener('release', () => { if (isTimerVisible) console.warn('Wake Lock released while timer visible.'); wakeLockSentinel = null; }); } catch (err) { console.error(`Wake Lock Failed: ${err.name}`); wakeLockSentinel = null; } } };
-        const releaseWakeLock = async () => { /* ... Jūsu esošais kods ... */ if (wakeLockSentinel) { await wakeLockSentinel.release(); wakeLockSentinel = null; } };
-        const showTimer = async () => { /* ... Jūsu esošais kods ... */ if (isTimerVisible) return; unlockAudioContext(); dom.timerOverlay.style.display = 'flex'; dom.toggleTimerBtn.textContent = '⏱️ Hide Timer'; await requestWakeLock(); startTimer(); };
-        const hideTimer = async () => { /* ... Jūsu esošais kods ... */ if (!isTimerVisible) return; isTimerVisible = false; stopTimer(); dom.timerOverlay.style.display = 'none'; dom.toggleTimerBtn.textContent = '⏱️ Timer'; await releaseWakeLock(); if (dom.timerAudio) { dom.timerAudio.pause(); dom.timerAudio.currentTime = 0; } dom.timerFill.style.height = '100%'; timerRemainingSeconds = TIMER_DURATION_SECONDS; updateTimerDisplay(); };
+        const formatTimerTime = (totalSeconds) => { const minutes = Math.floor(totalSeconds / 60); const seconds = totalSeconds % 60; return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`; };
+        const updateTimerDisplay = () => { if(dom.timerDisplay) dom.timerDisplay.textContent = formatTimerTime(timerRemainingSeconds); };
+        const updateTimerFill = () => { if(dom.timerFill) {const percentage = (timerRemainingSeconds / TIMER_DURATION_SECONDS) * 100; dom.timerFill.style.height = `${percentage}%`; }};
+        const unlockAudioContext = () => { if (!dom.timerAudio || !dom.timerAudio.src || dom.timerAudio.readyState < 1) { console.warn("Audio not ready for unlock."); return; } const playPromise = dom.timerAudio.play(); if (playPromise !== undefined) { playPromise.then(() => { dom.timerAudio.pause(); if (!audioUnlocked) { console.log("Audio context unlocked."); audioUnlocked = true; } else { console.log("Audio context re-activated."); } }).catch(error => { if (error.name !== 'AbortError') { console.warn("Audio unlock/reactivation failed:", error); audioUnlocked = false; } else if (!audioUnlocked) { console.log("Audio unlocked (AbortError)."); audioUnlocked = true; } }); } };
+        const playBeepSound = () => { if (!dom.timerAudio || !dom.timerAudio.src) { console.warn("Timer audio source not set."); return; } if (!audioUnlocked) { console.warn("Audio context not unlocked, attempting to unlock for beep."); unlockAudioContext(); } if (dom.timerAudio.readyState >= 2) { dom.timerAudio.currentTime = 0; const playPromise = dom.timerAudio.play(); if (playPromise !== undefined) { playPromise.catch(error => { console.error("Timer audio playback failed:", error); audioUnlocked = false; }); } } else { console.warn(`Audio not ready (readyState: ${dom.timerAudio.readyState}). Loading.`); dom.timerAudio.load(); } };
+        const timerTick = () => { if (!isTimerVisible) { stopTimer(); return; } timerRemainingSeconds--; if (timerRemainingSeconds < 0) { playBeepSound(); timerRemainingSeconds = TIMER_DURATION_SECONDS; } updateTimerDisplay(); updateTimerFill(); timerTimeoutId = setTimeout(timerTick, 1000); };
+        const startTimer = () => { stopTimer(); isTimerVisible = true; timerRemainingSeconds = (timerRemainingSeconds > 0 && timerRemainingSeconds <= TIMER_DURATION_SECONDS) ? timerRemainingSeconds : TIMER_DURATION_SECONDS; updateTimerDisplay(); updateTimerFill(); timerTimeoutId = setTimeout(timerTick, 1000); };
+        const stopTimer = () => { if (timerTimeoutId) { clearTimeout(timerTimeoutId); timerTimeoutId = null; } };
+        const handleNextTimerClick = () => { unlockAudioContext(); stopTimer(); timerRemainingSeconds = TIMER_DURATION_SECONDS; updateTimerDisplay(); updateTimerFill(); setTimeout(playBeepSound, 50); startTimer(); };
+        const requestWakeLock = async () => { if ('wakeLock' in navigator) { try { wakeLockSentinel = await navigator.wakeLock.request('screen'); wakeLockSentinel.addEventListener('release', () => { if (isTimerVisible) console.warn('Wake Lock released while timer visible.'); wakeLockSentinel = null; }); } catch (err) { console.error(`Wake Lock Failed: ${err.name}`); wakeLockSentinel = null; } } };
+        const releaseWakeLock = async () => { if (wakeLockSentinel) { await wakeLockSentinel.release(); wakeLockSentinel = null; } };
+        const showTimer = async () => { if (isTimerVisible) return; unlockAudioContext(); dom.timerOverlay.style.display = 'flex'; dom.toggleTimerBtn.textContent = '⏱️ Hide Timer'; await requestWakeLock(); startTimer(); };
+        const hideTimer = async () => { if (!isTimerVisible) return; isTimerVisible = false; stopTimer(); dom.timerOverlay.style.display = 'none'; dom.toggleTimerBtn.textContent = '⏱️ Timer'; await releaseWakeLock(); if (dom.timerAudio) { dom.timerAudio.pause(); dom.timerAudio.currentTime = 0; } dom.timerFill.style.height = '100%'; timerRemainingSeconds = TIMER_DURATION_SECONDS; updateTimerDisplay(); };
 
-        // --- Gemini AI Insight Functions ---
-        function getStoredGeminiApiKey() { /* ... Jūsu esošais kods ... */ return localStorage.getItem(GEMINI_API_KEY_STORAGE_KEY); }
-        function storeGeminiApiKey(apiKey) { /* ... Jūsu esošais kods ... */ localStorage.setItem(GEMINI_API_KEY_STORAGE_KEY, apiKey); }
-        function updateApiKeySectionVisibility() { /* ... Jūsu esošais kods ... */ const storedKey = getStoredGeminiApiKey(); if (storedKey) { dom.geminiApiKeyInputGroup.classList.add('hidden'); dom.geminiApiKeyStoredInfo.classList.remove('hidden'); dom.getGeminiInsightBtn.disabled = !firebaseInitializedSuccessfully; dom.getGeminiImageIdeaBtn.disabled = !firebaseInitializedSuccessfully; } else { dom.geminiApiKeyInputGroup.classList.remove('hidden'); dom.geminiApiKeyStoredInfo.classList.add('hidden'); dom.geminiApiKeyInput.value = ''; dom.getGeminiInsightBtn.disabled = true; dom.getGeminiImageIdeaBtn.disabled = true; dom.geminiInsightResultDiv.textContent = 'Please enter your Gemini API Key to enable AI insights.'; } }
-        async function fetchFromGemini(apiKey, promptText, model = "gemini-2.0-flash") { /* ... Jūsu esošais kods ... */ const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`; try { const response = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', }, body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }], generationConfig: { temperature: 0.8, topK: 40, topP: 0.95, maxOutputTokens: 200 } }), }); if (!response.ok) { const errorData = await response.json(); console.error('Gemini API Error:', errorData); throw new Error(`Gemini API Error (${response.status}): ${errorData?.error?.message || response.statusText}. Ensure API is enabled and model name is correct.`); } const data = await response.json(); if (data.candidates && data.candidates[0]?.content?.parts[0]?.text) { return data.candidates[0].content.parts[0].text; } else if (data.promptFeedback?.blockReason) { throw new Error(`Content blocked: ${data.promptFeedback.blockReason}. ${data.promptFeedback.blockReasonMessage || ''}`); } throw new Error('Could not extract response from Gemini.'); } catch (error) { console.error('Error fetching from Gemini:', error); throw error; } }
-        function prepareDataForGemini() { /* ... Jūsu esošais kods ... */ let dataSummary = "Rummikub Game Stats:\n"; if (players.length === 0 && firebaseInitializedSuccessfully) return dataSummary + "No players yet. It's a lonely game so far!\n"; if (!firebaseInitializedSuccessfully) return dataSummary + "Database not connected. Cannot provide stats.\n"; dataSummary += `Players: ${players.map(p => utils.sanitizeHTML(p.name)).join(', ')}\n\n`; const totalWinsByPlayer = players.map(p => ({ name: utils.sanitizeHTML(p.name), count: wins.filter(w => w.playerId === p.id).length })).sort((a, b) => b.count - a.count); dataSummary += "Overall Leaderboard (All Time):\n"; if (totalWinsByPlayer.some(p => p.count > 0)) { totalWinsByPlayer.forEach(p => dataSummary += `- ${p.name}: ${utils.pluralize(p.count, 'win')}\n`); } else { dataSummary += "- No one has won yet! The trophy is still up for grabs!\n"; } dataSummary += "\n"; const { start: currentStart, end: currentEnd } = utils.getPeriodRange(currentDashboardPeriod, currentDisplayDate); const currentPeriodWinsData = getWinsForPeriodLocal(currentDashboardPeriod, currentDisplayDate); let currentPeriodTitle = ''; switch (currentDashboardPeriod) { case 'week': currentPeriodTitle = `This Week (${currentStart.toLocaleDateString()} - ${currentEnd.toLocaleDateString()})`; break; case 'month': currentPeriodTitle = `This Month (${utils.getFullMonthName(currentDisplayDate.getMonth())} ${currentDisplayDate.getFullYear()})`; break; case 'year': currentPeriodTitle = `This Year (${currentDisplayDate.getFullYear()})`; break; } dataSummary += `Performance - ${currentPeriodTitle}:\n`; if (currentPeriodWinsData.length > 0) { const winsByPlayer = players.reduce((acc, p) => ({...acc, [p.id]: { name: utils.sanitizeHTML(p.name), count: 0 }}), {}); currentPeriodWinsData.forEach(w => { if (winsByPlayer[w.playerId]) winsByPlayer[w.playerId].count++; }); Object.values(winsByPlayer).filter(p=>p.count > 0).sort((a,b) => b.count - a.count).forEach(p => dataSummary += `- ${p.name}: ${utils.pluralize(p.count, 'win')}\n`); } else { dataSummary += `- No wins recorded in this period. Is everyone on vacation?\n`; } dataSummary += "\n"; let prevDate = new Date(currentDisplayDate); let prevPeriodTitle = ""; if (currentDashboardPeriod === 'week') { prevDate.setDate(prevDate.getDate() - 7); prevPeriodTitle = "Last Week"; } else if (currentDashboardPeriod === 'month') { prevDate.setMonth(prevDate.getMonth() - 1); prevPeriodTitle = "Last Month"; } else if (currentDashboardPeriod === 'year') { prevDate.setFullYear(prevDate.getFullYear() - 1); prevPeriodTitle = "Last Year"; } if (prevPeriodTitle) { const prevPeriodWinsData = getWinsForPeriodLocal(currentDashboardPeriod, prevDate); dataSummary += `For Comparison - ${prevPeriodTitle}:\n`; if (prevPeriodWinsData.length > 0) { const winsByPlayerPrev = players.reduce((acc, p) => ({...acc, [p.id]: { name: utils.sanitizeHTML(p.name), count: 0 }}), {}); prevPeriodWinsData.forEach(w => { if (winsByPlayerPrev[w.playerId]) winsByPlayerPrev[w.playerId].count++; }); Object.values(winsByPlayerPrev).filter(p=>p.count > 0).sort((a,b) => b.count - a.count).forEach(p => dataSummary += `- ${p.name}: ${utils.pluralize(p.count, 'win')}\n`); } else { dataSummary += `- No wins recorded in ${prevPeriodTitle}. A fresh start perhaps!\n`; } dataSummary += "\n"; } const threeDaysAgo = new Date(); threeDaysAgo.setDate(threeDaysAgo.getDate() - 2); threeDaysAgo.setHours(0,0,0,0); const recentWinsRaw = wins.filter(w => w.timestamp?.toDate() >= threeDaysAgo); if(recentWinsRaw.length > 0){ dataSummary += "Hot Streaks (Last 3 Days including Today):\n"; const recentSummary = recentWinsRaw.reduce((acc,w) => { const pName = players.find(p=>p.id === w.playerId)?.name || "An Unknown Force"; acc[utils.sanitizeHTML(pName)] = (acc[utils.sanitizeHTML(pName)] || 0) + 1; return acc; }, {}); Object.entries(recentSummary).sort(([,a],[,b]) => b-a).forEach(([name, count]) => dataSummary += `- ${name} won ${utils.pluralize(count, 'time')}\n`); } else { dataSummary += "Recent Activity: A bit quiet lately. Time to shuffle the tiles!\n" } return dataSummary; }
-        async function handleGetGeminiInsight(isButtonPress = true) { /* ... Jūsu esošais kods ... */ const apiKey = dom.geminiApiKeyInput.value.trim() || getStoredGeminiApiKey(); if (!apiKey) { dom.geminiInsightResultDiv.innerHTML = `<span style="color:red;">API Key needed! Please enter it above.</span>`; updateApiKeySectionVisibility(); return; } if (!firebaseInitializedSuccessfully) { dom.geminiInsightResultDiv.innerHTML = `<span style="color:orange;">Database not connected. AI insights need game data.</span>`; return; } if (isButtonPress) storeGeminiApiKey(apiKey); updateApiKeySectionVisibility(); dom.getGeminiInsightBtn.disabled = true; dom.getGeminiInsightBtn.textContent = 'Rethinking... 😂'; if (!isButtonPress) dom.geminiInsightResultDiv.innerHTML = 'Fetching initial insight... 🧠'; else dom.geminiInsightResultDiv.innerHTML = 'Conjuring witticisms... 🧠'; const gameDataSummary = prepareDataForGemini(); const prompt = `\nYou are a witty and slightly sarcastic Rummikub game commentator. Your audience loves a good chuckle.\nBased on the Rummikub game stats below, provide a funny and insightful commentary of 1 short sentences per player and remove any bullet points and make it flow well between players.\n- Make comparisons: Who's dominating this month vs. last month? Who's on a hot streak? Is anyone surprisingly ahead overall vs. recently?\n- Be playful: Tease the players, celebrate (or mock) streaks, and make light of the competition. \n- Use humor: Puns, witty observations, and a generally amusing tone are highly encouraged.\n- Examples: "Looks like [Player X] found their mojo this week, leaving everyone else in the dust! Meanwhile, [Player Y]'s lucky charm from last month seems to have gone on strike." or "[Player Z] is playing the long game, slowly climbing the overall leaderboard while everyone else is distracted by shiny weekly wins. Clever!"\n- If data is sparse, make a joke about it: "The scoreboard is looking a bit lonely. Did everyone forget how to play, or are they just being fashionably late to the winner's circle?"\n\nGame Data:\n${gameDataSummary}\n\nYour funny commentary:\n -Players JB and Mike tend to do mountain biking so add some funny mountain biking jokes only for them. Randomize if mountain bikes are added or not, sometimes include them and sometimes dont.  \n Make sure every player is always mentioned in the commentary.`; try { const insight = await fetchFromGemini(apiKey, prompt, "gemini-2.0-flash"); dom.geminiInsightResultDiv.textContent = insight.trim(); } catch (error) { dom.geminiInsightResultDiv.innerHTML = `<span style="color:red;">Spicy Error: ${utils.sanitizeHTML(error.message)}</span> <br>Maybe the AI is on a coffee break? Check API key & console.`; } finally { dom.getGeminiInsightBtn.disabled = false; dom.getGeminiInsightBtn.textContent = 'Get New Funny Insight 😂'; } }
-        async function handleGetGeminiImageIdea() { /* ... Jūsu esošais kods ... */ const apiKey = dom.geminiApiKeyInput.value.trim() || getStoredGeminiApiKey(); if (!apiKey) { dom.geminiImageIdeaResultDiv.innerHTML = `<span style="color:red;">API Key needed for artistic visions!</span>`; dom.geminiImageIdeaResultDiv.classList.remove('hidden'); updateApiKeySectionVisibility(); return; } if (!firebaseInitializedSuccessfully) { dom.geminiImageIdeaResultDiv.innerHTML = `<span style="color:orange;">Database not connected. Image ideas need game data.</span>`; dom.geminiImageIdeaResultDiv.classList.remove('hidden'); return; } storeGeminiApiKey(apiKey); updateApiKeySectionVisibility(); dom.getGeminiImageIdeaBtn.disabled = true; dom.getGeminiImageIdeaBtn.textContent = 'Sketching... 🎨'; dom.geminiImageIdeaResultDiv.innerHTML = 'Imagining a masterpiece... 🖼️'; dom.geminiImageIdeaResultDiv.classList.remove('hidden'); const gameDataSummary = prepareDataForGemini(); const prompt = `\nYou are a whimsical and imaginative cartoonist asked to describe a funny Rummikub-themed cartoon scene based on game stats.\nDescribe a single, vivid, cartoon-like scene. Make it funny, slightly absurd, and related to the game or player performance.\n- Focus on a key player or a funny comparison from the stats.\n- Example description: "Picture [Player X], crowned with a lopsided paper crown, smugly riding a giant Rummikub tile like a surfboard, while [Player Y] comically trips over a pile of unused tiles in the background, a confused chicken perched on their head."\n- Be creative and brief (2-3 sentences for the description).\n\nGame Stats for Inspiration:\n${gameDataSummary}\n\nYour funny cartoon scene description:\n            `; try { const imageIdea = await fetchFromGemini(apiKey, prompt, "gemini-2.0-flash"); dom.geminiImageIdeaResultDiv.textContent = imageIdea.trim(); } catch (error) { dom.geminiImageIdeaResultDiv.innerHTML = `<span style="color:red;">Creative Block: ${utils.sanitizeHTML(error.message)}</span> <br>The AI's muse might be napping. Check API key & console.`; } finally { dom.getGeminiImageIdeaBtn.disabled = false; dom.getGeminiImageIdeaBtn.textContent = 'Get Funny Image Idea 🎨'; } }
+        // --- Gemini AI & TTS Insight Functions ---
+        function getStoredGeminiApiKey() { return localStorage.getItem(GEMINI_API_KEY_STORAGE_KEY); }
+        function storeGeminiApiKey(apiKey) { localStorage.setItem(GEMINI_API_KEY_STORAGE_KEY, apiKey); }
+        
+        function isValidInsightText(text) {
+            if (!text) return false;
+            const lowerText = text.toLowerCase();
+            const placeholders = [
+                'enter your api key', 'please enter your gemini api key', 'api key is stored',
+                'fetching initial insight', 'conjuring witticisms', 'rethinking...',
+                'spicy error:', 'api key needed', 'database not connected', 'creative block',
+                'sketching...', 'imagining a masterpiece...'
+            ];
+            return !placeholders.some(p => lowerText.includes(p));
+        }
+
+        function toggleListenButton(show, insightText = "") {
+            if (!dom.listenToInsightBtn) return;
+
+            const canListen = show && isValidInsightText(insightText);
+
+            if (canListen) {
+                dom.listenToInsightBtn.style.display = 'inline-block';
+                dom.listenToInsightBtn.disabled = isSpeaking; 
+                if (!isSpeaking) {
+                    dom.listenToInsightBtn.innerHTML = '🔊 Audiable Insight!';
+                }
+            } else {
+                dom.listenToInsightBtn.style.display = 'none';
+                if (insightAudio && !insightAudio.paused) {
+                    insightAudio.pause();
+                    insightAudio.currentTime = 0; 
+                }
+                // If button is hidden, ensure speaking state is reset IF it's not already speaking
+                // This prevents interrupting active speech just by, e.g., key removal.
+                // The stop functionality is now part of the button click itself.
+            }
+        }
+
+        function addListenToInsightButton() {
+            if (dom.listenToInsightBtn || !dom.geminiButtonsFlexDiv) return; 
+
+            const button = document.createElement('button');
+            button.id = 'listenToInsightBtn';
+            button.innerHTML = '🔊 Listen';
+            button.classList.add('icon-button', 'secondary'); 
+            button.style.marginLeft = '0px'; // Rely on flex gap
+            button.style.display = 'none'; // Initially hidden
+            
+            dom.geminiButtonsFlexDiv.appendChild(button);
+            dom.listenToInsightBtn = button;
+
+            dom.listenToInsightBtn.addEventListener('click', async () => {
+                if (isSpeaking) {
+                    if (insightAudio && !insightAudio.paused) {
+                        insightAudio.pause();
+                        insightAudio.currentTime = 0;
+                    }
+                    isSpeaking = false;
+                    dom.listenToInsightBtn.innerHTML = '🔊 Listen';
+                    dom.listenToInsightBtn.disabled = false;
+                    return;
+                }
+
+                const textToSpeak = dom.geminiInsightResultDiv.textContent;
+                 if (!isValidInsightText(textToSpeak)) {
+                    alert("No valid insight available to listen to.");
+                    toggleListenButton(false);
+                    return;
+                }
+                await speakTextWithGoogleTTS(textToSpeak);
+            });
+        }
+        
+               async function speakTextWithGoogleTTS(textToSpeak) {
+            const apiKey = getStoredGeminiApiKey();
+            if (!apiKey) {
+                alert("API Key needed for Text-to-Speech. Please enter it in the AI Insights section.");
+                toggleListenButton(false); // Ensure button is hidden if key is missing
+                return;
+            }
+
+            if (isSpeaking) return; // Should be caught by button state, but defensive check
+
+            isSpeaking = true;
+            dom.listenToInsightBtn.disabled = true;
+            dom.listenToInsightBtn.innerHTML = '🔊 Loading, wait a few seconds...';
+
+            const voices = [
+                { name: "en-US-Chirp-HD-F", gender: "MALE" }, // Male, expressive
+                { name: "en-US-Chirp-HD-F", gender: "FEMALE" } // Female, expressive
+            ];
+            const selectedVoice = voices[Math.floor(Math.random() * voices.length)];
+            // const ssmlText = `<speak>${utils.sanitizeHTML(textToSpeak)}</speak>`; // REMOVED SSML WRAPPING
+            const TTS_API_URL = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`;
+
+            try {
+                const response = await fetch(TTS_API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        // input: { ssml: ssmlText }, // CHANGED FROM SSML
+                        input: { text: textToSpeak },   // TO PLAIN TEXT
+                        voice: {
+                            languageCode: 'en-US',
+                            name: selectedVoice.name
+                        },
+                        audioConfig: {
+                            audioEncoding: 'MP3',
+                            speakingRate: 1.0, 
+                            pitch: 0 
+                        }
+                    })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    console.error('Google TTS API Error:', errorData);
+                    let errorMessage = `TTS API Error (${response.status}): ${errorData?.error?.message || response.statusText}.`;
+                    if (response.status === 400 && errorData?.error?.message.includes("SSML")) {
+                         errorMessage += " This voice might not support SSML. Switched to text input, try again.";
+                    } else {
+                        errorMessage += " Ensure Cloud Text-to-Speech API is enabled for your key and project.";
+                    }
+                    throw new Error(errorMessage);
+                }
+
+                const data = await response.json();
+                if (data.audioContent) {
+                    const audioBytes = Uint8Array.from(atob(data.audioContent), c => c.charCodeAt(0));
+                    const audioBlob = new Blob([audioBytes], { type: 'audio/mp3' });
+                    const audioUrl = URL.createObjectURL(audioBlob);
+
+                    if (!insightAudio) insightAudio = new Audio();
+                    
+                    insightAudio.src = audioUrl;
+                    dom.listenToInsightBtn.innerHTML = '🔊 Playing...';
+
+                    insightAudio.play()
+                        .catch(e => {
+                            console.error("Error playing audio:", e);
+                            isSpeaking = false;
+                            dom.listenToInsightBtn.innerHTML = '🔊 Listen';
+                            dom.listenToInsightBtn.disabled = false;
+                            toggleListenButton(true, textToSpeak); 
+                            alert("Error playing audio. Check console.");
+                            URL.revokeObjectURL(audioUrl);
+                        });
+
+                    insightAudio.onended = () => {
+                        isSpeaking = false;
+                        dom.listenToInsightBtn.innerHTML = '🔊 Listen';
+                        dom.listenToSBtn.disabled = false;
+                        toggleListenButton(true, textToSpeak); 
+                        URL.revokeObjectURL(audioUrl); 
+                    };
+                    insightAudio.onerror = (e) => {
+                        console.error("Audio playback error object:", e);
+                        isSpeaking = false;
+                        dom.listenToInsightBtn.innerHTML = '🔊 Listen (Err)';
+                        dom.listenToInsightBtn.disabled = false;
+                        toggleListenButton(true, textToSpeak); 
+                        URL.revokeObjectURL(audioUrl);
+                        alert("Error during audio playback. Check console.");
+                    };
+
+                } else {
+                    throw new Error("No audio content received from TTS API.");
+                }
+
+            } catch (error) {
+                console.error('Error with TTS:', error);
+                alert(`Could not play insight: ${error.message}`);
+                isSpeaking = false;
+                dom.listenToInsightBtn.innerHTML = '🔊 Listen';
+                dom.listenToInsightBtn.disabled = false;
+                toggleListenButton(true, textToSpeak); 
+            }
+        }
+
+
+        function updateApiKeySectionVisibility() { 
+            const storedKey = getStoredGeminiApiKey(); 
+            if (storedKey) { 
+                dom.geminiApiKeyInputGroup.classList.add('hidden'); 
+                dom.geminiApiKeyStoredInfo.classList.remove('hidden'); 
+                dom.getGeminiInsightBtn.disabled = !firebaseInitializedSuccessfully; 
+                dom.getGeminiImageIdeaBtn.disabled = !firebaseInitializedSuccessfully; 
+            } else { 
+                dom.geminiApiKeyInputGroup.classList.remove('hidden'); 
+                dom.geminiApiKeyStoredInfo.classList.add('hidden'); 
+                dom.geminiApiKeyInput.value = ''; 
+                dom.getGeminiInsightBtn.disabled = true; 
+                dom.getGeminiImageIdeaBtn.disabled = true; 
+                dom.geminiInsightResultDiv.textContent = 'Please enter your Gemini API Key to enable AI insights.'; 
+                toggleListenButton(false); // Hide listen button if key is removed
+            } 
+        }
+        async function fetchFromGemini(apiKey, promptText, model = "gemini-2.0-flash") { const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`; try { const response = await fetch(API_URL, { method: 'POST', headers: { 'Content-Type': 'application/json', }, body: JSON.stringify({ contents: [{ parts: [{ text: promptText }] }], generationConfig: { temperature: 0.8, topK: 40, topP: 0.95, maxOutputTokens: 200 } }), }); if (!response.ok) { const errorData = await response.json(); console.error('Gemini API Error:', errorData); throw new Error(`Gemini API Error (${response.status}): ${errorData?.error?.message || response.statusText}. Ensure API is enabled and model name is correct.`); } const data = await response.json(); if (data.candidates && data.candidates[0]?.content?.parts[0]?.text) { return data.candidates[0].content.parts[0].text; } else if (data.promptFeedback?.blockReason) { throw new Error(`Content blocked: ${data.promptFeedback.blockReason}. ${data.promptFeedback.blockReasonMessage || ''}`); } throw new Error('Could not extract response from Gemini.'); } catch (error) { console.error('Error fetching from Gemini:', error); throw error; } }
+        function prepareDataForGemini() { let dataSummary = "Rummikub Game Stats:\n"; if (players.length === 0 && firebaseInitializedSuccessfully) return dataSummary + "No players yet. It's a lonely game so far!\n"; if (!firebaseInitializedSuccessfully) return dataSummary + "Database not connected. Cannot provide stats.\n"; dataSummary += `Players: ${players.map(p => utils.sanitizeHTML(p.name)).join(', ')}\n\n`; const totalWinsByPlayer = players.map(p => ({ name: utils.sanitizeHTML(p.name), count: wins.filter(w => w.playerId === p.id).length })).sort((a, b) => b.count - a.count); dataSummary += "Overall Leaderboard (All Time):\n"; if (totalWinsByPlayer.some(p => p.count > 0)) { totalWinsByPlayer.forEach(p => dataSummary += `- ${p.name}: ${utils.pluralize(p.count, 'win')}\n`); } else { dataSummary += "- No one has won yet! The trophy is still up for grabs!\n"; } dataSummary += "\n"; const { start: currentStart, end: currentEnd } = utils.getPeriodRange(currentDashboardPeriod, currentDisplayDate); const currentPeriodWinsData = getWinsForPeriodLocal(currentDashboardPeriod, currentDisplayDate); let currentPeriodTitle = ''; switch (currentDashboardPeriod) { case 'week': currentPeriodTitle = `This Week (${currentStart.toLocaleDateString()} - ${currentEnd.toLocaleDateString()})`; break; case 'month': currentPeriodTitle = `This Month (${utils.getFullMonthName(currentDisplayDate.getMonth())} ${currentDisplayDate.getFullYear()})`; break; case 'year': currentPeriodTitle = `This Year (${currentDisplayDate.getFullYear()})`; break; } dataSummary += `Performance - ${currentPeriodTitle}:\n`; if (currentPeriodWinsData.length > 0) { const winsByPlayer = players.reduce((acc, p) => ({...acc, [p.id]: { name: utils.sanitizeHTML(p.name), count: 0 }}), {}); currentPeriodWinsData.forEach(w => { if (winsByPlayer[w.playerId]) winsByPlayer[w.playerId].count++; }); Object.values(winsByPlayer).filter(p=>p.count > 0).sort((a,b) => b.count - a.count).forEach(p => dataSummary += `- ${p.name}: ${utils.pluralize(p.count, 'win')}\n`); } else { dataSummary += `- No wins recorded in this period. Is everyone on vacation?\n`; } dataSummary += "\n"; let prevDate = new Date(currentDisplayDate); let prevPeriodTitle = ""; if (currentDashboardPeriod === 'week') { prevDate.setDate(prevDate.getDate() - 7); prevPeriodTitle = "Last Week"; } else if (currentDashboardPeriod === 'month') { prevDate.setMonth(prevDate.getMonth() - 1); prevPeriodTitle = "Last Month"; } else if (currentDashboardPeriod === 'year') { prevDate.setFullYear(prevDate.getFullYear() - 1); prevPeriodTitle = "Last Year"; } if (prevPeriodTitle) { const prevPeriodWinsData = getWinsForPeriodLocal(currentDashboardPeriod, prevDate); dataSummary += `For Comparison - ${prevPeriodTitle}:\n`; if (prevPeriodWinsData.length > 0) { const winsByPlayerPrev = players.reduce((acc, p) => ({...acc, [p.id]: { name: utils.sanitizeHTML(p.name), count: 0 }}), {}); prevPeriodWinsData.forEach(w => { if (winsByPlayerPrev[w.playerId]) winsByPlayerPrev[w.playerId].count++; }); Object.values(winsByPlayerPrev).filter(p=>p.count > 0).sort((a,b) => b.count - a.count).forEach(p => dataSummary += `- ${p.name}: ${utils.pluralize(p.count, 'win')}\n`); } else { dataSummary += `- No wins recorded in ${prevPeriodTitle}. A fresh start perhaps!\n`; } dataSummary += "\n"; } const threeDaysAgo = new Date(); threeDaysAgo.setDate(threeDaysAgo.getDate() - 2); threeDaysAgo.setHours(0,0,0,0); const recentWinsRaw = wins.filter(w => w.timestamp?.toDate() >= threeDaysAgo); if(recentWinsRaw.length > 0){ dataSummary += "Hot Streaks (Last 3 Days including Today):\n"; const recentSummary = recentWinsRaw.reduce((acc,w) => { const pName = players.find(p=>p.id === w.playerId)?.name || "An Unknown Force"; acc[utils.sanitizeHTML(pName)] = (acc[utils.sanitizeHTML(pName)] || 0) + 1; return acc; }, {}); Object.entries(recentSummary).sort(([,a],[,b]) => b-a).forEach(([name, count]) => dataSummary += `- ${name} won ${utils.pluralize(count, 'time')}\n`); } else { dataSummary += "Recent Activity: A bit quiet lately. Time to shuffle the tiles!\n" } return dataSummary; }
+        async function handleGetGeminiInsight(isButtonPress = true) { 
+            const apiKey = dom.geminiApiKeyInput.value.trim() || getStoredGeminiApiKey(); 
+            if (!apiKey) { 
+                dom.geminiInsightResultDiv.innerHTML = `<span style="color:red;">API Key needed! Please enter it above.</span>`; 
+                updateApiKeySectionVisibility(); 
+                toggleListenButton(false);
+                return; 
+            } 
+            if (!firebaseInitializedSuccessfully) { 
+                dom.geminiInsightResultDiv.innerHTML = `<span style="color:orange;">Database not connected. AI insights need game data.</span>`; 
+                toggleListenButton(false);
+                return; 
+            } 
+            if (isButtonPress || !getStoredGeminiApiKey()) storeGeminiApiKey(apiKey); 
+            updateApiKeySectionVisibility(); 
+            dom.getGeminiInsightBtn.disabled = true; 
+            dom.getGeminiInsightBtn.textContent = 'Rethinking... 😂'; 
+            
+            if (isSpeaking && insightAudio) { // Stop any ongoing speech
+                insightAudio.pause();
+                insightAudio.currentTime = 0;
+                isSpeaking = false;
+            }
+            toggleListenButton(false); // Hide button while fetching new insight
+
+            if (!isButtonPress) dom.geminiInsightResultDiv.innerHTML = 'Fetching initial insight... 🧠'; 
+            else dom.geminiInsightResultDiv.innerHTML = 'Conjuring witticisms... 🧠'; 
+            
+            const gameDataSummary = prepareDataForGemini(); 
+            const prompt = `
+You are a witty, observant, and slightly sarcastic Rummikub game commentator with a knack for comedic timing. Your audience loves your playful jabs and insightful, humorous takes. Your commentary should sound like a friend chatting excitedly, sometimes conspiratorially, with another friend about the game.
+
+Based on the Rummikub game stats below, provide a funny and insightful commentary of 1-3 short, flowing sentences. Ensure every player is mentioned.
+
+**Your Comedic Style & Delivery (for Text Generation):**
+
+* **Natural & Conversational:** Write like you're speaking directly to a friend. Use informal language, contractions, and a relaxed tone. Think stand-up comedian observing the game.
+* **Punctuation for Nuance & Pacing:**
+    * **Pauses:** Use ellipses (...) strategically for comedic effect, to indicate a thought trailing off, or a moment of mock disbelief. Short, punchy sentences or even well-placed sentence fragments can also create natural pauses.
+    * **Excitement & Exclamation:** Don't be shy with exclamation points! If a point is particularly surprising or funny, let it show! Occasionally, you might even use ALL CAPS for a *single* word or very short phrase if you want to convey shouting or extreme emphasis (e.g., "NO WAY!").
+    * **Wondering & Sarcasm:** Use question marks to pose rhetorical questions or express mock wonder. Sarcasm can be conveyed through word choice and by stating something that's clearly a bit absurd given the context (e.g., "Oh, Player X is just being *generous* this month with those scores, right?").
+* **Show, Don't Just Tell Emotion:**
+    * Instead of writing "(laughs)", craft a line that is genuinely funny or highlights an absurd situation that would make someone chuckle. For example, "Player Y's tile rack must be looking like a abstract art project with those moves... or maybe it's avant-garde?"
+    * For excitement, use vivid adjectives and verbs.
+* **Playful Teasing & Comparisons:**
+    * Gently tease players. Who's dominating this month vs. last? Who's on an undeniable hot streak (or a hilarious cold one)? Is anyone surprisingly ahead overall, or perhaps their recent performance is... let's say, *unexpected*?
+    * Celebrate or gently mock streaks and the competitive spirit.
+* **Humor Techniques:** Employ puns (if they're clever!), witty observations, and a generally amusing and light-hearted tone.
+* **Sparse Data Joke:** If data is sparse, lean into it: "Well, the scoreboard's looking a bit minimalist this period. Are we going for a 'less is more' vibe, or did someone hide the good tiles?"
+
+**Content Specifics:**
+
+* Ensure your commentary flows well, even when transitioning between players. No bullet points in the final output.
+* **Mountain Biking Banter (Conditional):** For players JB and Mike, who enjoy mountain biking, feel free to randomly sprinkle in a funny, short mountain biking-related quip or comparison if it fits the commentary. Sometimes include it, sometimes don't – keep it surprising! (e.g., "Looks like JB's navigating the leaderboard like a technical downhill course this month!" or "Mike's scores are climbing steadier than a granny gear on a steep ascent! Meanwhile...")
+* **Mention Every Player:** Critically, every player active in the \`gameDataSummary\` must be mentioned in your commentary, even if it's a brief, witty aside.
+
+**Examples (Illustrating Tone & Punctuation for Nuance):**
+
+* "Okay, so Player X is CLEARLY channeling some kind of Rummikub wizard this week... leaving everyone else wondering if their tiles are just decorative. And Player Y? Their lucky streak from last month seems to have... well, taken an extended vacation, shall we say?"
+* "Player Z is playing the long game, folks! Sneaking up that overall leaderboard while everyone's distracted by the weekly fireworks. Clever, Z, very clever... or just very patient?"
+* "So, JB, after shredding the trails, you're shredding the scoreboard too, eh? Impressive! Mike, on the other hand... maybe stick to the actual mountains this week? Just kidding! (mostly)."
+
+**Game Data:**
+${gameDataSummary}
+
+**Your Funny Commentary (remember, 1-3 flowing sentences, mentioning all players):**
+`;; 
+            try { 
+                const insight = await fetchFromGemini(apiKey, prompt, "gemini-2.0-flash"); 
+                dom.geminiInsightResultDiv.textContent = insight.trim(); 
+                toggleListenButton(true, insight.trim());
+            } catch (error) { 
+                dom.geminiInsightResultDiv.innerHTML = `<span style="color:red;">Spicy Error: ${utils.sanitizeHTML(error.message)}</span> <br>Maybe the AI is on a coffee break? Check API key & console.`; 
+                toggleListenButton(false);
+            } finally { 
+                dom.getGeminiInsightBtn.disabled = false; 
+                dom.getGeminiInsightBtn.textContent = 'Get New Funny Insight 😂'; 
+            } 
+        }
+        async function handleGetGeminiImageIdea() { const apiKey = dom.geminiApiKeyInput.value.trim() || getStoredGeminiApiKey(); if (!apiKey) { dom.geminiImageIdeaResultDiv.innerHTML = `<span style="color:red;">API Key needed for artistic visions!</span>`; dom.geminiImageIdeaResultDiv.classList.remove('hidden'); updateApiKeySectionVisibility(); return; } if (!firebaseInitializedSuccessfully) { dom.geminiImageIdeaResultDiv.innerHTML = `<span style="color:orange;">Database not connected. Image ideas need game data.</span>`; dom.geminiImageIdeaResultDiv.classList.remove('hidden'); return; } storeGeminiApiKey(apiKey); updateApiKeySectionVisibility(); dom.getGeminiImageIdeaBtn.disabled = true; dom.getGeminiImageIdeaBtn.textContent = 'Sketching... 🎨'; dom.geminiImageIdeaResultDiv.innerHTML = 'Imagining a masterpiece... 🖼️'; dom.geminiImageIdeaResultDiv.classList.remove('hidden'); const gameDataSummary = prepareDataForGemini(); const prompt = `\nYou are a whimsical and imaginative cartoonist asked to describe a funny Rummikub-themed cartoon scene based on game stats.\nDescribe a single, vivid, cartoon-like scene. Make it funny, slightly absurd, and related to the game or player performance.\n- Focus on a key player or a funny comparison from the stats.\n- Example description: "Picture [Player X], crowned with a lopsided paper crown, smugly riding a giant Rummikub tile like a surfboard, while [Player Y] comically trips over a pile of unused tiles in the background, a confused chicken perched on their head."\n- Be creative and brief (2-3 sentences for the description).\n\nGame Stats for Inspiration:\n${gameDataSummary}\n\nYour funny cartoon scene description:\n            `; try { const imageIdea = await fetchFromGemini(apiKey, prompt, "gemini-2.0-flash"); dom.geminiImageIdeaResultDiv.textContent = imageIdea.trim(); } catch (error) { dom.geminiImageIdeaResultDiv.innerHTML = `<span style="color:red;">Creative Block: ${utils.sanitizeHTML(error.message)}</span> <br>The AI's muse might be napping. Check API key & console.`; } finally { dom.getGeminiImageIdeaBtn.disabled = false; dom.getGeminiImageIdeaBtn.textContent = 'Get Funny Image Idea 🎨'; } }
 
         // --- Event Listeners ---
         dom.togglePlayerManagementBtn.addEventListener('click', () => { dom.playerManagementSection.classList.toggle('hidden'); const i = dom.playerManagementSection.classList.contains('hidden'); dom.togglePlayerManagementBtn.textContent = i ? '⚙️ Manage' : '🔽 Close'; });
@@ -420,13 +702,13 @@
         // --- Initialization (IIFE) ---
         (async () => {
             console.log("App initialization started.");
+            addListenToInsightButton(); // Create the button early
 
-            // 1. Firebase Initialization (Critical First Step for Data)
             try {
-                if (!firebaseConfig.apiKey || firebaseConfig.apiKey.startsWith("YOUR_") ||
-                    !firebaseConfig.projectId || firebaseConfig.projectId.startsWith("YOUR_")) {
+                if (!firebaseConfig.apiKey || firebaseConfig.apiKey.includes("YOUR_") || firebaseConfig.apiKey.includes("Replace!") ||
+                    !firebaseConfig.projectId || firebaseConfig.projectId.includes("YOUR_") || firebaseConfig.projectId.includes("Replace!")) {
                     dom.firebaseConfigWarningDiv.innerHTML = '<strong>Firebase Setup: CRITICAL!</strong> Please replace placeholder values in `firebaseConfig` (like YOUR_API_KEY, YOUR_PROJECT_ID) with your actual Firebase project configuration. Stats will not load without this.';
-                    dom.firebaseConfigWarningDiv.style.backgroundColor = '#f8d7da'; // Error color
+                    dom.firebaseConfigWarningDiv.style.backgroundColor = '#f8d7da'; 
                     console.error("Firebase config contains placeholder values. Halting Firebase initialization.");
                 } else {
                     app = initializeApp(firebaseConfig);
@@ -445,7 +727,6 @@
                 dom.firebaseConfigWarningDiv.style.backgroundColor = '#f8d7da';
             }
 
-            // 2. Chart.js registration
             if (typeof Chart !== 'undefined' && typeof ChartDataLabels !== 'undefined') {
                 Chart.register(ChartDataLabels);
                 console.log("Chart.js and Datalabels registered.");
@@ -453,14 +734,12 @@
                 console.warn("Chart or ChartDataLabels not fully loaded. Datalabels might not work.");
             }
 
-            // 3. Set up basic UI state not dependent on Firebase/Data
             currentView = 'player';
             currentDashboardPeriod = 'month';
             currentDisplayDate = new Date();
             updateApiKeySectionVisibility(); 
             updateTimerDisplay();
 
-            // 4. Conditional loading of data and Firebase-dependent UI
             if (firebaseInitializedSuccessfully) {
                 console.log("Proceeding with Firebase-dependent setup.");
                 try {
@@ -471,7 +750,7 @@
                     updateCustomAudioUI();
                     console.log("Audio preferences loaded.");
 
-                    await loadData(); // This calls renderApp
+                    await loadData(); 
                     console.log("Game data loading initiated (players, wins).");
 
                     if (getStoredGeminiApiKey()) {
@@ -479,24 +758,27 @@
                         handleGetGeminiInsight(false);
                     } else {
                         dom.geminiInsightResultDiv.textContent = 'Enter Gemini API Key for AI insights.';
+                        toggleListenButton(false);
                         dom.getGeminiInsightBtn.disabled = true;
                         dom.getGeminiImageIdeaBtn.disabled = true;
                     }
                 } catch (error) {
                     console.error("Error during Firebase-dependent setup (audio/data/gemini):", error);
-                    renderApp(); // Render basic app structure if data loading failed critically
+                    renderApp(); 
                     dom.noPlayersForScoringMsg.textContent = "Error loading app data. Check console.";
                     dom.noPlayersForScoringMsg.classList.remove('hidden');
+                    toggleListenButton(false);
                 }
             } else {
                 console.warn("Firebase not initialized. Skipping Firebase-dependent setup.");
-                renderApp(); // Render basic UI (empty lists, etc.)
+                renderApp(); 
                 dom.noPlayersForScoringMsg.textContent = "Database connection failed. Cannot load players.";
                 dom.noPlayersForScoringMsg.classList.remove('hidden');
                 dom.noWinsTodayMsg.textContent = "Database connection failed.Cannot load wins.";
                 dom.noWinsTodayMsg.classList.remove('hidden');
                 if(dom.scoreTrackingListUl) dom.scoreTrackingListUl.innerHTML = '<p class="no-data">Score tracking unavailable (database error).</p>';
                 
+                toggleListenButton(false);
                 dom.getGeminiInsightBtn.disabled = true;
                 dom.getGeminiImageIdeaBtn.disabled = true;
                 if (!getStoredGeminiApiKey()) {
