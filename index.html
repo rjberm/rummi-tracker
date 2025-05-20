@@ -567,7 +567,7 @@
             } catch (error) { console.error('Error with TTS:', error); alert(`Could not play insight: ${error.message}`); isSpeaking = false; dom.listenToInsightBtn.innerHTML = '🔊 Listen'; dom.listenToInsightBtn.disabled = false; toggleListenButton(true, textToSpeak); }
         }
 
-        // TTS function for timer commentary (internal, returns Audio object or plays)
+               // TTS function for timer commentary (internal, returns Audio object or plays)
         async function synthesizeTimerCommentarySpeech(textToSpeak, playImmediately = false) {
             const apiKey = getStoredGeminiApiKey();
             if (!apiKey) { console.error("TTS Internal: API Key missing."); return null; }
@@ -600,18 +600,29 @@
                         audio.oncanplaythrough = () => {
                             if (playImmediately) {
                                 audio.play()
-                                    .then(() => console.log("Timer commentary playing."))
+                                    .then(() => {
+                                        console.log("Timer commentary play initiated.");
+                                        resolve(audio); // Resolve with the audio object once playback STARTS
+                                    })
                                     .catch(e => {
                                         console.error("Error playing timer commentary immediately:", e);
-                                        URL.revokeObjectURL(audioUrl);
+                                        URL.revokeObjectURL(audioUrl); // Clean up if play fails
                                         reject(e);
                                     });
-                                audio.onended = () => { URL.revokeObjectURL(audioUrl); resolve(null); }; // Resolve with null when done playing
+                                // Clean up URL when audio finishes playing, but don't tie promise resolution to it
+                                audio.onended = () => {
+                                    console.log("Timer commentary finished playing.");
+                                    URL.revokeObjectURL(audioUrl);
+                                };
                             } else {
-                                resolve(audio); // Resolve with preloaded audio object
+                                resolve(audio); // Resolve with preloaded audio object (for later play)
                             }
                         };
-                        audio.onerror = (e) => { console.error("Audio object error (Timer TTS):", e); URL.revokeObjectURL(audioUrl); reject(new Error("Failed to load/play synthesized timer audio.")); };
+                        audio.onerror = (e) => {
+                            console.error("Audio object error (Timer TTS):", e);
+                            URL.revokeObjectURL(audioUrl); // Clean up on error
+                            reject(new Error("Failed to load/play synthesized timer audio."));
+                        };
                         audio.load(); // Important to start loading
                     });
                 } else { throw new Error("No audio content received from TTS API (Timer)."); }
