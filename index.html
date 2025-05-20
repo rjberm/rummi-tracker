@@ -567,7 +567,7 @@
             } catch (error) { console.error('Error with TTS:', error); alert(`Could not play insight: ${error.message}`); isSpeaking = false; dom.listenToInsightBtn.innerHTML = '🔊 Listen'; dom.listenToInsightBtn.disabled = false; toggleListenButton(true, textToSpeak); }
         }
 
- // TTS function for timer commentary (internal, returns Audio object or plays)
+        // TTS function for timer commentary (internal, returns Audio object or plays)
         async function synthesizeTimerCommentarySpeech(textToSpeak, playImmediately = false) {
             const apiKey = getStoredGeminiApiKey();
             if (!apiKey) { console.error("TTS Internal: API Key missing."); return null; }
@@ -600,29 +600,18 @@
                         audio.oncanplaythrough = () => {
                             if (playImmediately) {
                                 audio.play()
-                                    .then(() => {
-                                        console.log("Timer commentary play initiated.");
-                                        resolve(audio); // Resolve with the audio object once playback STARTS
-                                    })
+                                    .then(() => console.log("Timer commentary playing."))
                                     .catch(e => {
                                         console.error("Error playing timer commentary immediately:", e);
-                                        URL.revokeObjectURL(audioUrl); // Clean up if play fails
+                                        URL.revokeObjectURL(audioUrl);
                                         reject(e);
                                     });
-                                // Clean up URL when audio finishes playing, but don't tie promise resolution to it
-                                audio.onended = () => {
-                                    console.log("Timer commentary finished playing.");
-                                    URL.revokeObjectURL(audioUrl);
-                                };
+                                audio.onended = () => { URL.revokeObjectURL(audioUrl); resolve(null); }; // Resolve with null when done playing
                             } else {
-                                resolve(audio); // Resolve with preloaded audio object (for later play)
+                                resolve(audio); // Resolve with preloaded audio object
                             }
                         };
-                        audio.onerror = (e) => {
-                            console.error("Audio object error (Timer TTS):", e);
-                            URL.revokeObjectURL(audioUrl); // Clean up on error
-                            reject(new Error("Failed to load/play synthesized timer audio."));
-                        };
+                        audio.onerror = (e) => { console.error("Audio object error (Timer TTS):", e); URL.revokeObjectURL(audioUrl); reject(new Error("Failed to load/play synthesized timer audio.")); };
                         audio.load(); // Important to start loading
                     });
                 } else { throw new Error("No audio content received from TTS API (Timer)."); }
@@ -694,10 +683,11 @@
 
             const gameDataSummary = prepareDataForGemini();
             const promptForLongInsight = `
+            **Primary Directive: Your ONLY output will be 1-3 senteces of text. No preambles, no explanations, no apologies, nothing but the commentary itself.**
 You are a witty, observant, and slightly sarcastic Rummikub game commentator with a knack for comedic timing. Your audience loves your playful jabs and insightful, humorous takes. Your commentary should sound like a friend chatting excitedly, sometimes conspiratorially, with another friend about the game.
 
 Based on the Rummikub game stats below, provide a funny and insightful commentary. 
-CRITICAL - make it 1-2 sentences total for this commentary.
+CRITITAL: use RUMMI only instead of the entire RUMMIKUB word.
 
 **Your Comedic Style & Delivery (for Text Generation):**
 *   Natural & Conversational: Write like you're speaking directly to a friend. Use informal language, contractions, and a relaxed tone. Think stand-up comedian observing the game.
@@ -751,12 +741,13 @@ ${gameDataSummary}
         // --- AI Timer Commentary Functions ---
         function getAiTimerCommentaryPromptText(gameDataSummary) {
             return `
+**Primary Directive: Your ONLY output will be ONE (1) single line of text. No preambles, no explanations, no apologies, nothing but the commentary itself.**
 You are a witty, observant, and slightly sarcastic Rummikub game commentator for a timer with a knack for short, punchy lines. Your audience loves your playful jabs and insightful, humorous takes delivered quickly.
 Based on the Rummikub game stats below, provide a funny and insightful commentary. Also, make more generic punch lines to point out that it's the next player's turn.
-CRITICAL: Your response MUST be 10-15 words ONLY (one single line). This is for a quick audio alert. This is for text-to-speech google API for Chirp3-HD voices so format it so it sounds natural with nuances and expressions.
-CRITITAL: DO NOT always mentioned the top players with wins, also focus on those with low scores. Mix it up. Also, use "Rummi", NEVER use the full word rummikub.
-CRITITAL: Give the line, do not prephase it with instructions.
-CRITITAL: Use slang like Kevin hart will use in his jokes. NEVER GIVE MORE THAN ONE LINE. Never say it's "Y Players" turn as it's unknown who the next player can be.
+CRITICAL: Your response MUST be 10-15 words ONLY. This is for a quick audio alert. This is for text-to-speech google API for Chirp3-HD voices so format it so it sounds natural with nuances and expressions.
+CRITICAL: DO NOT always mentioned the top players with wins, also focus on those with low scores. Mix it up. Also, use "Rummi", NEVER use the full word rummikub.
+CRITICAL: Use slang like Kevin hart will use in his jokes. Never say it's "Y Players" turn as it's unknown who the next player can be.
+CRITICAL: JOVANY is said "Jovaaahny" so spell it like that with emphasis in VAh.
 
 Your Comedic Style & Delivery (for Text Generation):
 - Punctuation for Pacing: Use ellipses (...), exclamation points (!) sparingly.
@@ -776,13 +767,18 @@ CRITICAL: Do not always use the top scorers, you can use also low scorers. Audie
 "Beatriz... masterclass in progress!"
 "Everyone's so quiet... planning something?"
 "Next up! Who's feeling lucky?"
+"Rosie is ahead Beatriz by [points] points"
+"Mike, you're the lowest today"
+"JB, come on man, catch up!!"
 
-CRITICAL: You can use other punch items like the ones below mixed with player stats mentioned earlier:
+CRITICAL: You can use other punch items like the ones below mixed with player stats mentioned earlier in ONE SINGLE PUNCH LINE:
 "Times up, who's next"
 "haha, I hope you finish, time is up"
 "time is up, seriously, just stop"
 "you got 60 seconds left"
 "who will be the winner this time? You know who!"
+
+**FINAL, ABSOLUTE INSTRUCTION: Your entire response MUST be just ONE single line of commentary. Nothing before it, nothing after it. Just the line.**
 
 Game Data:
 ${gameDataSummary}
