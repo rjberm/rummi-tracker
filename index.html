@@ -535,7 +535,8 @@
             dom.listenToInsightBtn.disabled = true;
             dom.listenToInsightBtn.innerHTML = '🔊 Loading...';
 
-            const voices = [ { name: "en-US-Chirp3-HD-Achernar", gender: "FEMALE" }, 
+            const voices = [ { name: "en-US-Chirp3-HD-Achernar", gender: "FEMALE" },
+                            { name: "en-US-Chirp3-HD-algenib", gender: "MALE" },
             { name: "en-US-Chirp3-HD-Aoede", gender: "FAMALE" }
      ]; // Using Wavenet and Studio for potentially more natural/expressive
             const selectedVoice = voices[Math.floor(Math.random() * voices.length)];
@@ -574,7 +575,9 @@
             if (!textToSpeak || textToSpeak.trim() === "") { console.error("TTS Internal: No text to speak."); return null;}
 
             // Using a specific voice style for the commentator, can be randomized more later
-            const commentatorVoices = [ { name: "en-US-Chirp3-HD-Achernar", gender: "FEMALE" }, { name: "en-US-Chirp3-HD-Aoede", gender: "FEMALE" }];
+            const commentatorVoices = [ { name: "en-US-Chirp3-HD-Achernar", gender: "FEMALE" },
+                                       { name: "en-US-Chirp3-HD-algenib", gender: "MALE" },
+                                       { name: "en-US-Chirp3-HD-Aoede", gender: "FEMALE" }];
             const selectedVoice = commentatorVoices[Math.floor(Math.random() * commentatorVoices.length)];
             const TTS_API_URL = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`;
 
