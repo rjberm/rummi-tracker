@@ -222,7 +222,7 @@
         const PRELOAD_AI_COMMENTARY_SECONDS_BEFORE_END = 5; // Preload AI commentary 5s before timer ends
         let isTimerVisible = false;
         let audioUnlocked = false;
-        let wakeLockSentinel = null;
+        let wakeLockSentinel = null; // THIS IS THE WAKE LOCK SENTINEL
         let audioPreferences = [];
         let currentActiveAudioPreferenceId = "default";
         let insightAudio = null; // For TTS audio object for "Listen to Insight" button
@@ -477,22 +477,56 @@
             startTimer(); // Restart the timer sequence
         };
 
-        const requestWakeLock = async () => { if ('wakeLock' in navigator) { try { wakeLockSentinel = await navigator.wakeLock.request('screen'); wakeLockSentinel.addEventListener('release', () => { if (isTimerVisible) console.warn('Wake Lock released while timer visible.'); wakeLockSentinel = null; }); } catch (err) { console.error(`Wake Lock Failed: ${err.name}`); wakeLockSentinel = null; } } };
-        const releaseWakeLock = async () => { if (wakeLockSentinel) { await wakeLockSentinel.release(); wakeLockSentinel = null; } };
-        const showTimer = async () => { if (isTimerVisible) return; unlockAudioContext(); dom.timerOverlay.style.display = 'flex'; dom.toggleTimerBtn.textContent = '⏱️ Hide Timer'; await requestWakeLock(); startTimer(); };
+        // --- WAKE LOCK FUNCTIONS ---
+        const requestWakeLock = async () => {
+            if ('wakeLock' in navigator) {
+                try {
+                    wakeLockSentinel = await navigator.wakeLock.request('screen');
+                    wakeLockSentinel.addEventListener('release', () => {
+                        if (isTimerVisible) console.warn('Wake Lock released while timer visible.');
+                        wakeLockSentinel = null;
+                    });
+                    console.log('Wake Lock active.');
+                } catch (err) {
+                    console.error(`Wake Lock Failed: ${err.name}, ${err.message}`);
+                    wakeLockSentinel = null;
+                }
+            } else {
+                console.warn('Wake Lock API not supported.');
+            }
+        };
+
+        const releaseWakeLock = async () => {
+            if (wakeLockSentinel) {
+                await wakeLockSentinel.release();
+                wakeLockSentinel = null;
+                console.log('Wake Lock released.');
+            }
+        };
+        // --- END WAKE LOCK FUNCTIONS ---
+
+
+        const showTimer = async () => {
+            if (isTimerVisible) return;
+            unlockAudioContext();
+            dom.timerOverlay.style.display = 'flex';
+            dom.toggleTimerBtn.textContent = '⏱️ Hide Timer';
+            await requestWakeLock(); // REQUEST WAKE LOCK
+            startTimer();
+        };
         
         const hideTimer = async () => {
             if (!isTimerVisible) return;
             isTimerVisible = false;
-            stopTimer(); // Clears timer and currentTimerAiCommentaryText
+            stopTimer();
             dom.timerOverlay.style.display = 'none';
             dom.toggleTimerBtn.textContent = '⏱️ Timer';
-            await releaseWakeLock();
+            await releaseWakeLock(); // RELEASE WAKE LOCK
             if (dom.timerAudio) {
                 dom.timerAudio.pause();
                 dom.timerAudio.currentTime = 0;
             }
-            if(aiCommentaryAudio) { // Should be handled by stopTimer, but good to double check
+            if(aiCommentaryAudio) {
                 aiCommentaryAudio.pause();
                 aiCommentaryAudio = null;
             }
@@ -500,19 +534,17 @@
             timerRemainingSeconds = TIMER_DURATION_SECONDS;
             updateTimerDisplay();
 
-            // ADDED: Refresh or restore the main Gemini insight
             if (getStoredGeminiApiKey() && firebaseInitializedSuccessfully) {
                 console.log("Timer hidden. Refreshing main Gemini insight.");
-                handleGetGeminiInsight(false); // Fetch a new long insight
+                handleGetGeminiInsight(false);
             } else if (lastLongInsightText && lastLongInsightText.trim() !== "") {
                 console.log("Timer hidden. Restoring last long Gemini insight.");
                 dom.geminiInsightResultDiv.textContent = lastLongInsightText;
                 toggleListenButton(true, lastLongInsightText);
             } else {
-                 // Fallback if no API key or no previous long insight
                 const defaultMsg = 'Enter your API Key above to get started...';
                 dom.geminiInsightResultDiv.textContent = defaultMsg;
-                lastLongInsightText = defaultMsg; // Store this as the "last known"
+                lastLongInsightText = defaultMsg;
                 toggleListenButton(false);
             }
         };
@@ -538,7 +570,7 @@
             const voices = [ { name: "en-US-Chirp3-HD-Achernar", gender: "FEMALE" },
                             { name: "en-US-Chirp3-HD-algenib", gender: "MALE" },
             { name: "en-US-Chirp3-HD-Aoede", gender: "FAMALE" }
-     ]; // Using Wavenet and Studio for potentially more natural/expressive
+     ];
             const selectedVoice = voices[Math.floor(Math.random() * voices.length)];
             const TTS_API_URL = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`;
 
@@ -548,7 +580,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         input: { text: textToSpeak },
-                        voice: { languageCode: 'en-US', name: selectedVoice.name }, // Removed ssmlGender
+                        voice: { languageCode: 'en-US', name: selectedVoice.name },
                         audioConfig: { audioEncoding: 'MP3', speakingRate: 1.1, pitch: 0 }
                     })
                 });
@@ -561,20 +593,18 @@
                     if (!insightAudio) insightAudio = new Audio();
                     insightAudio.src = audioUrl;
                     dom.listenToInsightBtn.innerHTML = '🔊 Playing...';
-                    await insightAudio.play(); // Added await
+                    await insightAudio.play();
                     insightAudio.onended = () => { isSpeaking = false; dom.listenToInsightBtn.innerHTML = '🔊 Listen'; dom.listenToInsightBtn.disabled = false; toggleListenButton(true, textToSpeak); URL.revokeObjectURL(audioUrl); };
                     insightAudio.onerror = (e) => { console.error("Audio playback error object:", e); isSpeaking = false; dom.listenToInsightBtn.innerHTML = '🔊 Listen (Err)'; dom.listenToInsightBtn.disabled = false; toggleListenButton(true, textToSpeak); URL.revokeObjectURL(audioUrl); alert("Error during audio playback. Check console."); };
                 } else { throw new Error("No audio content received from TTS API."); }
             } catch (error) { console.error('Error with TTS:', error); alert(`Could not play insight: ${error.message}`); isSpeaking = false; dom.listenToInsightBtn.innerHTML = '🔊 Listen'; dom.listenToInsightBtn.disabled = false; toggleListenButton(true, textToSpeak); }
         }
 
-               // TTS function for timer commentary (internal, returns Audio object or plays)
         async function synthesizeTimerCommentarySpeech(textToSpeak, playImmediately = false) {
             const apiKey = getStoredGeminiApiKey();
             if (!apiKey) { console.error("TTS Internal: API Key missing."); return null; }
             if (!textToSpeak || textToSpeak.trim() === "") { console.error("TTS Internal: No text to speak."); return null;}
 
-            // Using a specific voice style for the commentator, can be randomized more later
             const commentatorVoices = [ { name: "en-US-Chirp3-HD-Achernar", gender: "FEMALE" },
                                        { name: "en-US-Chirp3-HD-algenib", gender: "MALE" },
                                        { name: "en-US-Chirp3-HD-Aoede", gender: "FEMALE" }];
@@ -588,7 +618,7 @@
                     body: JSON.stringify({
                         input: { text: textToSpeak },
                         voice: { languageCode: 'en-US', name: selectedVoice.name },
-                        audioConfig: { audioEncoding: 'MP3', speakingRate: 1.1, pitch: 0 } // Slightly faster for punchy delivery
+                        audioConfig: { audioEncoding: 'MP3', speakingRate: 1.1, pitch: 0 }
                     })
                 });
                 if (!response.ok) { const errorData = await response.json(); console.error('Google TTS API Error (Timer):', errorData); throw new Error(`TTS API Error (${response.status}): ${errorData?.error?.message || response.statusText}`); }
@@ -605,28 +635,27 @@
                                 audio.play()
                                     .then(() => {
                                         console.log("Timer commentary play initiated.");
-                                        resolve(audio); // Resolve with the audio object once playback STARTS
+                                        resolve(audio);
                                     })
                                     .catch(e => {
                                         console.error("Error playing timer commentary immediately:", e);
-                                        URL.revokeObjectURL(audioUrl); // Clean up if play fails
+                                        URL.revokeObjectURL(audioUrl);
                                         reject(e);
                                     });
-                                // Clean up URL when audio finishes playing, but don't tie promise resolution to it
                                 audio.onended = () => {
                                     console.log("Timer commentary finished playing.");
                                     URL.revokeObjectURL(audioUrl);
                                 };
                             } else {
-                                resolve(audio); // Resolve with preloaded audio object (for later play)
+                                resolve(audio);
                             }
                         };
                         audio.onerror = (e) => {
                             console.error("Audio object error (Timer TTS):", e);
-                            URL.revokeObjectURL(audioUrl); // Clean up on error
+                            URL.revokeObjectURL(audioUrl);
                             reject(new Error("Failed to load/play synthesized timer audio."));
                         };
-                        audio.load(); // Important to start loading
+                        audio.load();
                     });
                 } else { throw new Error("No audio content received from TTS API (Timer)."); }
             } catch (error) { console.error('Error with Timer TTS:', error); return Promise.reject(error); }
@@ -637,12 +666,11 @@
 
         async function fetchFromGemini(apiKey, promptText, model = "gemini-2.0-flash", generationConfigOverrides = {}) {
             const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-            // Default config, can be overridden for specific calls (e.g., timer commentary)
             const defaultConfig = {
                 temperature: 0.9,
                 topK: 40,
                 topP: 0.95,
-                maxOutputTokens: 300 // Default for longer insights
+                maxOutputTokens: 300
             };
             const finalConfig = { ...defaultConfig, ...generationConfigOverrides };
 
@@ -665,13 +693,12 @@
 
         function prepareDataForGemini() { let dataSummary = "Rummikub Game Stats:\n"; if (players.length === 0 && firebaseInitializedSuccessfully) return dataSummary + "No players yet. It's a lonely game so far!\n"; if (!firebaseInitializedSuccessfully) return dataSummary + "Database not connected. Cannot provide stats.\n"; dataSummary += `Players: ${players.map(p => utils.sanitizeHTML(p.name)).join(', ')}\n\n`; const totalWinsByPlayer = players.map(p => ({ name: utils.sanitizeHTML(p.name), count: wins.filter(w => w.playerId === p.id).length })).sort((a, b) => b.count - a.count); dataSummary += "Overall Leaderboard (All Time):\n"; if (totalWinsByPlayer.some(p => p.count > 0)) { totalWinsByPlayer.forEach(p => dataSummary += `- ${p.name}: ${utils.pluralize(p.count, 'win')}\n`); } else { dataSummary += "- No one has won yet! The trophy is still up for grabs!\n"; } dataSummary += "\n"; const { start: currentStart, end: currentEnd } = utils.getPeriodRange(currentDashboardPeriod, currentDisplayDate); const currentPeriodWinsData = getWinsForPeriodLocal(currentDashboardPeriod, currentDisplayDate); let currentPeriodTitle = ''; switch (currentDashboardPeriod) { case 'week': currentPeriodTitle = `This Week (${currentStart.toLocaleDateString()} - ${currentEnd.toLocaleDateString()})`; break; case 'month': currentPeriodTitle = `This Month (${utils.getFullMonthName(currentDisplayDate.getMonth())} ${currentDisplayDate.getFullYear()})`; break; case 'year': currentPeriodTitle = `This Year (${currentDisplayDate.getFullYear()})`; break; } dataSummary += `Performance - ${currentPeriodTitle}:\n`; if (currentPeriodWinsData.length > 0) { const winsByPlayer = players.reduce((acc, p) => ({...acc, [p.id]: { name: utils.sanitizeHTML(p.name), count: 0 }}), {}); currentPeriodWinsData.forEach(w => { if (winsByPlayer[w.playerId]) winsByPlayer[w.playerId].count++; }); Object.values(winsByPlayer).filter(p=>p.count > 0).sort((a,b) => b.count - a.count).forEach(p => dataSummary += `- ${p.name}: ${utils.pluralize(p.count, 'win')}\n`); } else { dataSummary += `- No wins recorded in this period. Is everyone on vacation?\n`; } dataSummary += "\n"; let prevDate = new Date(currentDisplayDate); let prevPeriodTitle = ""; if (currentDashboardPeriod === 'week') { prevDate.setDate(prevDate.getDate() - 7); prevPeriodTitle = "Last Week"; } else if (currentDashboardPeriod === 'month') { prevDate.setMonth(prevDate.getMonth() - 1); prevPeriodTitle = "Last Month"; } else if (currentDashboardPeriod === 'year') { prevDate.setFullYear(prevDate.getFullYear() - 1); prevPeriodTitle = "Last Year"; } if (prevPeriodTitle) { const prevPeriodWinsData = getWinsForPeriodLocal(currentDashboardPeriod, prevDate); dataSummary += `For Comparison - ${prevPeriodTitle}:\n`; if (prevPeriodWinsData.length > 0) { const winsByPlayerPrev = players.reduce((acc, p) => ({...acc, [p.id]: { name: utils.sanitizeHTML(p.name), count: 0 }}), {}); prevPeriodWinsData.forEach(w => { if (winsByPlayerPrev[w.playerId]) winsByPlayerPrev[w.playerId].count++; }); Object.values(winsByPlayerPrev).filter(p=>p.count > 0).sort((a,b) => b.count - a.count).forEach(p => dataSummary += `- ${p.name}: ${utils.pluralize(p.count, 'win')}\n`); } else { dataSummary += `- No wins recorded in ${prevPeriodTitle}. A fresh start perhaps!\n`; } dataSummary += "\n"; } const threeDaysAgo = new Date(); threeDaysAgo.setDate(threeDaysAgo.getDate() - 2); threeDaysAgo.setHours(0,0,0,0); const recentWinsRaw = wins.filter(w => w.timestamp?.toDate() >= threeDaysAgo); if(recentWinsRaw.length > 0){ dataSummary += "Hot Streaks (Last 3 Days including Today):\n"; const recentSummary = recentWinsRaw.reduce((acc,w) => { const pName = players.find(p=>p.id === w.playerId)?.name || "An Unknown Force"; acc[utils.sanitizeHTML(pName)] = (acc[utils.sanitizeHTML(pName)] || 0) + 1; return acc; }, {}); Object.entries(recentSummary).sort(([,a],[,b]) => b-a).forEach(([name, count]) => dataSummary += `- ${name} won ${utils.pluralize(count, 'time')}\n`); } else { dataSummary += "Recent Activity: A bit quiet lately. Time to shuffle the tiles!\n" } return dataSummary; }
 
-        // Main function to get the longer, detailed funny insight
         async function handleGetGeminiInsight(isButtonPress = true) {
             const apiKey = dom.geminiApiKeyInput.value.trim() || getStoredGeminiApiKey();
             if (!apiKey) {
                 const msg = `<span style="color:red;">API Key needed! Please enter it above.</span>`;
                 dom.geminiInsightResultDiv.innerHTML = msg;
-                lastLongInsightText = msg; // Store this as the current state
+                lastLongInsightText = msg;
                 updateApiKeySectionVisibility();
                 toggleListenButton(false);
                 return;
@@ -679,7 +706,7 @@
             if (!firebaseInitializedSuccessfully) {
                 const msg = `<span style="color:orange;">Database not connected. AI insights need game data.</span>`;
                 dom.geminiInsightResultDiv.innerHTML = msg;
-                lastLongInsightText = msg; // Store this as the current state
+                lastLongInsightText = msg;
                 toggleListenButton(false);
                 return;
             }
@@ -689,11 +716,10 @@
             dom.getGeminiInsightBtn.disabled = true;
             dom.getGeminiInsightBtn.textContent = 'Rethinking... 😂';
             if (isSpeaking && insightAudio) { insightAudio.pause(); insightAudio.currentTime = 0; isSpeaking = false; }
-            toggleListenButton(false); // Turn off while fetching
+            toggleListenButton(false);
 
             const loadingMsg = isButtonPress ? 'Conjuring witticisms... 🧠' : 'Fetching initial insight... 🧠';
-            dom.geminiInsightResultDiv.innerHTML = loadingMsg; // Show loading message
-            // Do not update lastLongInsightText with loading messages
+            dom.geminiInsightResultDiv.innerHTML = loadingMsg;
 
             const gameDataSummary = prepareDataForGemini();
             const promptForLongInsight = `
@@ -735,15 +761,15 @@ CRITITAL: use Rummi only instead of the entire RUMMIKUB word.
 ${gameDataSummary}
 `;
             try {
-                const insight = await fetchFromGemini(apiKey, promptForLongInsight, "gemini-2.0-flash"); // Model for long insights
+                const insight = await fetchFromGemini(apiKey, promptForLongInsight, "gemini-2.0-flash");
                 const finalInsightText = insight.trim();
                 dom.geminiInsightResultDiv.textContent = finalInsightText;
-                lastLongInsightText = finalInsightText; // Store successful long insight
+                lastLongInsightText = finalInsightText;
                 toggleListenButton(true, finalInsightText);
             } catch (error) {
                 const errorMsg = `<span style="color:red;">Spicy Error: ${utils.sanitizeHTML(error.message)}</span> <br>Maybe the AI is on a coffee break? Check API key & console.`;
                 dom.geminiInsightResultDiv.innerHTML = errorMsg;
-                lastLongInsightText = errorMsg; // Store error message as the current state
+                lastLongInsightText = errorMsg;
                 toggleListenButton(false);
             }
             finally {
@@ -752,7 +778,6 @@ ${gameDataSummary}
             }
         }
 
-        // --- AI Timer Commentary Functions ---
         function getAiTimerCommentaryPromptText(gameDataSummary) {
             return `
 **Primary Directive: Your ONLY output will be ONE (1) single line of text. No preambles, no explanations, no apologies, nothing but the commentary itself.**
@@ -762,11 +787,11 @@ Based on the Rummikub game stats below, provide a funny and insightful commentar
 CRITICAL: Your response MUST be 10-15 words ONLY. This is for a quick audio alert. This is for text-to-speech google API for Chirp3-HD voices so format it so it sounds natural with nuances and expressions.
 CRITICAL: DO NOT always mentioned the top players with wins, also focus on those with low scores. Mix it up. Also, use "Rummi", NEVER use the full word rummikub.
 CRITICAL: Use slang like Kevin hart will use in his jokes. Never say it's "Y Players" turn as it's unknown who the next player can be.
-CRITICAL: JOVANY is said "Jovaaahny" so spell it like that with emphasis in VAh. Mike is said Mike. Beatriz is spelled Be-aah-triz. Rosie is spell the same, Rosie.
+CRITICAL: JOVANY is said "Jovaaany" so spell it like that with emphasis in VAh. Mike is said Mike. Beatriz is spelled Be-aah-triz. Rosie is spell the same, Rosie.
 
 Your Comedic Style & Delivery (for Text Generation):
 - Punctuation for Pacing: Use ellipses (...), exclamation points (!) sparingly.
-- Humor: Witty observations, playful teasing, scores or trends, or sarcastic comments.
+- Humor: Witty observations, playful teasing, scores or trends, or sarcastic comments. Make it jokes of Kevin Hart.
 - Player Mentions: If possible, briefly allude to a player's performance or not performing.
 - Mountain Biking Banter (Conditional, for JB/Mike): "JB's climbing again!" or "Mike's on a roll... downhill?"
 - Focus: Recent stats (current period, hot streaks from Game Data).
@@ -779,14 +804,12 @@ CRITICAL: Do not always use the top scorers, you can use also low scorers. Audie
 "Mike, come on man. Try harder just like you try biking!"
 "JB, still pedaling to victory!"
 "Rosie's cooking up another win!"
-"[Player Y], is winning X points, come one"
 "Beatriz... masterclass in progress!"
 "Everyone's so quiet... planning something?"
 "Next up! Who's feeling lucky?"
 "Rosie is ahead Beatriz by [points] points"
 "Mike, you're the lowest today"
 "Jovany, come on man, catch up!!"
-"Beatriz, you're x points away from Rosie!!"
 
 CRITICAL: You can use other punch items like the ones below mixed with player stats mentioned earlier in ONE SINGLE PUNCH LINE:
 "Times up, who's next"
@@ -794,7 +817,6 @@ CRITICAL: You can use other punch items like the ones below mixed with player st
 "time is up, seriously, just stop"
 "you got 60 seconds left"
 "who will be the winner this time? You know who!"
-"You want some tacos or wins? clearly not wins!"
 
 **FINAL, ABSOLUTE INSTRUCTION: Your entire response MUST be just ONE single line of commentary. Nothing before it, nothing after it. Just the line.**
 
@@ -813,23 +835,22 @@ ${gameDataSummary}
             try {
                 const gameDataSummary = prepareDataForGemini();
                 const promptText = getAiTimerCommentaryPromptText(gameDataSummary);
-                // CORRECTED: Use gemini-1.5-flash-latest and maxOutputTokens: 30
                 const commentaryText = await fetchFromGemini(apiKey, promptText, "gemini-2.0-flash", { maxOutputTokens: 100 });
 
                 if (commentaryText && commentaryText.trim() !== "") {
                     currentTimerAiCommentaryText = commentaryText.trim();
                     console.log("AI Timer Text (preload):", currentTimerAiCommentaryText);
-                    aiCommentaryAudio = await synthesizeTimerCommentarySpeech(currentTimerAiCommentaryText, false); // false = don't play immediately
+                    aiCommentaryAudio = await synthesizeTimerCommentarySpeech(currentTimerAiCommentaryText, false); 
                     if(aiCommentaryAudio) console.log("AI Timer Audio preloaded.");
                     else console.warn("AI Timer Audio preloading failed (no audio object).");
                 } else {
                     console.warn("AI Timer: Gemini returned empty text for commentary.");
-                    currentTimerAiCommentaryText = ""; // Ensure it's cleared
+                    currentTimerAiCommentaryText = "";
                 }
             } catch (error) {
                 console.error("Error preloading AI timer commentary:", error);
-                aiCommentaryAudio = null; // Ensure it's null on error
-                currentTimerAiCommentaryText = ""; // Clear text on error
+                aiCommentaryAudio = null;
+                currentTimerAiCommentaryText = "";
             } finally {
                 isLoadingAiCommentary = false;
             }
@@ -841,10 +862,6 @@ ${gameDataSummary}
             if (!apiKey) { console.warn("AI Timer: API Key missing for fetch and play."); if (isTimerEndEvent) playStandardBeepSound(); return; }
 
             isLoadingAiCommentary = true;
-            // REMOVED: Do not update main insight div with "Generating commentary..."
-            // dom.geminiInsightResultDiv.textContent = 'Generating commentary... 🎤';
-            // toggleListenButton(false);
-
             try {
                 const gameDataSummary = prepareDataForGemini();
                 const promptText = getAiTimerCommentaryPromptText(gameDataSummary);
@@ -853,26 +870,17 @@ ${gameDataSummary}
                 if (commentaryText && commentaryText.trim() !== "") {
                     currentTimerAiCommentaryText = commentaryText.trim();
                     console.log("AI Timer Text (fetch/play):", currentTimerAiCommentaryText);
-                    // REMOVED: Do not update main insight div with timer commentary text
-                    // dom.geminiInsightResultDiv.textContent = currentTimerAiCommentaryText;
-                    // toggleListenButton(true, currentTimerAiCommentaryText);
-                    await synthesizeTimerCommentarySpeech(currentTimerAiCommentaryText, true); // true = play immediately
+                    await synthesizeTimerCommentarySpeech(currentTimerAiCommentaryText, true);
                 } else {
                     console.warn("AI Timer: Gemini returned empty text. Playing fallback.");
-                    // REMOVED: Do not update main insight div
-                    // dom.geminiInsightResultDiv.textContent = 'Hmm, the commentator is speechless!';
-                    if (isTimerEndEvent) playStandardBeepSound(); // Fallback for timer end
+                    if (isTimerEndEvent) playStandardBeepSound();
                 }
             } catch (error) {
                 console.error("Error fetching and playing AI timer commentary:", error);
-                // REMOVED: Do not update main insight div
-                // dom.geminiInsightResultDiv.textContent = 'Oops! Commentator took a tumble.';
-                if (isTimerEndEvent) playStandardBeepSound(); // Fallback for timer end
+                if (isTimerEndEvent) playStandardBeepSound();
             } finally {
                 isLoadingAiCommentary = false;
                 if (!isTimerEndEvent) {
-                    // For "Next" clicks, the commentary was just for audio, clear it.
-                    // For timer end events, it's cleared in timerTick after potential preloaded use.
                     currentTimerAiCommentaryText = "";
                 }
             }
@@ -903,13 +911,20 @@ ${gameDataSummary}
         dom.geminiApiKeyInput.addEventListener('change', () => { const apiKey = dom.geminiApiKeyInput.value.trim(); if (apiKey) { storeGeminiApiKey(apiKey); updateApiKeySectionVisibility(); if (firebaseInitializedSuccessfully) handleGetGeminiInsight(false); } });
         dom.changeApiKeyBtn.addEventListener('click', () => { localStorage.removeItem(GEMINI_API_KEY_STORAGE_KEY); updateApiKeySectionVisibility(); dom.geminiApiKeyInput.focus(); });
         dom.getGeminiInsightBtn.addEventListener('click', () => handleGetGeminiInsight(true));
-        document.addEventListener('visibilitychange', async () => { if (document.visibilityState === 'visible') { if (isTimerVisible && !wakeLockSentinel) await requestWakeLock(); if (isTimerVisible || audioUnlocked) unlockAudioContext(); } });
+        document.addEventListener('visibilitychange', async () => { // WAKE LOCK RELATED
+            if (document.visibilityState === 'visible') {
+                if (isTimerVisible && !wakeLockSentinel) {
+                     await requestWakeLock(); // If timer is on and lock was lost, re-request
+                }
+                if (isTimerVisible || audioUnlocked) unlockAudioContext();
+            }
+        });
 
         // --- Initialization (IIFE) ---
         (async () => {
             console.log("App initialization started.");
             addListenToInsightButton();
-            lastLongInsightText = dom.geminiInsightResultDiv.textContent; // Initialize with default message
+            lastLongInsightText = dom.geminiInsightResultDiv.textContent;
 
             try {
                 if (!firebaseConfig.apiKey || firebaseConfig.apiKey.includes("YOUR_") || firebaseConfig.apiKey.includes("Replace!") || !firebaseConfig.projectId || firebaseConfig.projectId.includes("YOUR_") || firebaseConfig.projectId.includes("Replace!")) {
@@ -936,7 +951,7 @@ ${gameDataSummary}
             currentView = 'player';
             currentDashboardPeriod = 'month';
             currentDisplayDate = new Date();
-            updateApiKeySectionVisibility(); // This will also set lastLongInsightText if API key is not present
+            updateApiKeySectionVisibility();
             updateTimerDisplay();
 
             if (firebaseInitializedSuccessfully) {
@@ -944,7 +959,7 @@ ${gameDataSummary}
                 try {
                     await loadAudioPreferencesFromFirebase();
                     currentActiveAudioPreferenceId = await getActiveAudioPreferenceIdFromFirebase();
-                    populateAudioSourceSelect(); // Populates with AI option too
+                    populateAudioSourceSelect();
                     await applyAudioChoice(currentActiveAudioPreferenceId);
                     updateCustomAudioUI();
                     console.log("Audio preferences loaded.");
@@ -954,13 +969,12 @@ ${gameDataSummary}
                         console.log("Attempting to fetch initial Gemini insight.");
                         handleGetGeminiInsight(false);
                     } else {
-                        // Message already set by updateApiKeySectionVisibility
                         toggleListenButton(false);
                         dom.getGeminiInsightBtn.disabled = true;
                     }
                 } catch (error) {
                     console.error("Error during Firebase-dependent setup (audio/data/gemini):", error);
-                    renderApp(); // Render with available (likely empty) data
+                    renderApp();
                     const errorMsg = "Error loading app data. Check console.";
                     dom.noPlayersForScoringMsg.textContent = errorMsg;
                     dom.noPlayersForScoringMsg.classList.remove('hidden');
@@ -970,8 +984,8 @@ ${gameDataSummary}
                 }
             } else {
                 console.warn("Firebase not initialized. Skipping Firebase-dependent setup.");
-                populateAudioSourceSelect(); // Still populate to show default & AI option, though AI won't work
-                applyAudioChoice("default"); // Default to standard beep
+                populateAudioSourceSelect();
+                applyAudioChoice("default");
                 updateCustomAudioUI();
                 renderApp();
                 dom.noPlayersForScoringMsg.textContent = "Database connection failed. Cannot load players.";
