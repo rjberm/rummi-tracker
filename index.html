@@ -649,7 +649,7 @@
                     try {
                         const gameDataSummary = prepareDataForGemini();
                         const promptText = getAiTimerCommentaryPromptText(gameDataSummary);
-                        const commentaryText = await fetchFromGemini(getStoredGeminiApiKey(), promptText, "gemini-2.5-flash-preview-05-20", { maxOutputTokens: 100 });
+                        const commentaryText = await fetchFromGemini(getStoredGeminiApiKey(), promptText, "gemini-2.0-flash", { maxOutputTokens: 100 });
 
                         if (commentaryText && commentaryText.trim() !== "") {
                             console.log("Random Mix - AI Text:", commentaryText.trim());
@@ -922,7 +922,7 @@
 
         function updateApiKeySectionVisibility() { const storedKey = getStoredGeminiApiKey(); if (storedKey) { dom.geminiApiKeyInputGroup.classList.add('hidden'); dom.geminiApiKeyStoredInfo.classList.remove('hidden'); dom.getGeminiInsightBtn.disabled = !firebaseInitializedSuccessfully; } else { dom.geminiApiKeyInputGroup.classList.remove('hidden'); dom.geminiApiKeyStoredInfo.classList.add('hidden'); dom.geminiApiKeyInput.value = ''; dom.getGeminiInsightBtn.disabled = true; dom.geminiInsightResultDiv.textContent = 'Please enter your Gemini API Key to enable AI insights.'; lastLongInsightText = dom.geminiInsightResultDiv.textContent; toggleListenButton(false); } }
 
-        async function fetchFromGemini(apiKey, promptText, model = "gemini-2.5-flash-preview-05-20", generationConfigOverrides = {}) {
+        async function fetchFromGemini(apiKey, promptText, model = "gemini-2.0-flash", generationConfigOverrides = {}) {
             const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
             const defaultConfig = {
                 temperature: 0.9,
@@ -1037,13 +1037,13 @@ CRITITAL: if the game is Rummikub, use Rummi only instead of the entire RUMMIKUB
 
 **Examples (Illustrating Tone & Punctuation for Nuance for LONGER insights):**
 *   "Okay, so Player X is CLEARLY channeling some kind of Rummikub wizard this week... leaving everyone else wondering if their tiles are just decorative. And Player Y? Their lucky streak from last month seems to have... well, taken an extended vacation, shall we say?"
-*   "Player Z is playing the long game, folks! Sneaking up that overall leaderboard while everyone's distracted by the weekly fireworks. Clever, Z, very clever.... or just very patient?"
+*   "Player Z is playing the long game, folks! Sneaking up that overall leaderboard while everyone's distracted by the weekly fireworks. Clever, Z, very clever... or just very patient?"
 
 **Game Data:**
 ${gameDataSummary}
 `;
             try {
-                const insight = await fetchFromGemini(apiKey, promptForLongInsight, "gemini-2.5-flash-preview-05-20");
+                const insight = await fetchFromGemini(apiKey, promptForLongInsight, "gemini-2.0-flash");
                 const finalInsightText = insight.trim();
                 dom.geminiInsightResultDiv.textContent = finalInsightText;
                 lastLongInsightText = finalInsightText;
@@ -1110,7 +1110,7 @@ ${gameDataSummary}
             try {
                 const gameDataSummary = prepareDataForGemini();
                 const promptText = getAiTimerCommentaryPromptText(gameDataSummary);
-                const commentaryText = await fetchFromGemini(apiKey, promptText, "gemini-2.5-flash-preview-05-20", { maxOutputTokens: 100 });
+                const commentaryText = await fetchFromGemini(apiKey, promptText, "gemini-2.0-flash", { maxOutputTokens: 100 });
 
                 if (commentaryText && commentaryText.trim() !== "") {
                     currentTimerAiCommentaryText = commentaryText.trim();
@@ -1155,7 +1155,7 @@ ${gameDataSummary}
             try {
                 const gameDataSummary = prepareDataForGemini();
                 const promptText = getAiTimerCommentaryPromptText(gameDataSummary);
-                const commentaryText = await fetchFromGemini(apiKey, promptText, "gemini-2.5-flash-preview-05-20", { maxOutputTokens: 100 });
+                const commentaryText = await fetchFromGemini(apiKey, promptText, "gemini-2.0-flash", { maxOutputTokens: 100 });
 
                 if (commentaryText && commentaryText.trim() !== "") {
                     currentTimerAiCommentaryText = commentaryText.trim(); // Store for potential display or reuse if needed
