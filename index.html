@@ -21,7 +21,7 @@
         button:hover, button:focus { background-color: #1a7f9a; outline: none; }
         button:disabled { background-color: #adb5bd; cursor: not-allowed; }
         button.secondary { background-color: #6c757d; }
-        button.secondary:hover, button.secondary:focus { background-color: #5a6268; }
+        button.secondary:hover, button:secondary:focus { background-color: #5a6268; }
         button.danger { background-color: #e76f51; }
         button.danger:hover, button:focus { background-color: #d95a3a; }
         button.icon-button { padding: 8px 10px; font-size: 0.9rem; margin-left: 5px; }
@@ -38,6 +38,7 @@
         #toggleTimerBtn:hover, #toggleTimerBtn:focus { background-color: #258a7f; }
         #playerManagement { border: 1px dashed #ccc; }
         #playerManagement.hidden { display: none; }
+        #gameManagement { padding-bottom: 15px; margin-bottom: 15px; border-bottom: 1px solid #eee; } /* New Style */
         .player-management-entry { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee; }
         .player-management-entry:last-child { border-bottom: none; }
         .player-management-entry span.player-name-display { flex-grow: 1; margin-right: 10px; }
@@ -149,7 +150,13 @@
         </section>
 
         <section id="playerManagement" class="hidden">
-            <h3>Manage Players & Settings</h3>
+            <h3>Manage Players, Games & Settings</h3>
+             <!-- NEW GAME MANAGEMENT SECTION -->
+            <div id="gameManagement">
+                <label for="gameSelector">Current Game:</label>
+                <select id="gameSelector"></select>
+            </div>
+             <!-- END NEW SECTION -->
             <div id="addPlayerForm">
                 <label for="newPlayerName">Add New Player:</label>
                 <input type="text" id="newPlayerName" placeholder="New Player Name">
@@ -210,7 +217,12 @@
 
         // --- Global Variables ---
         let players = [];
-        let wins = [];
+        let allWins = []; // NEW: Stores all wins from all games
+        let wins = []; // This is now the filtered list for the current game
+        let games = []; // NEW: Stores the list of games
+        const DEFAULT_GAME_ID = 'rummikub'; // NEW: Constant for the default game
+        let currentGameId = DEFAULT_GAME_ID; // NEW: Tracks the current game
+
         let currentDashboardPeriod = 'month';
         let currentDisplayDate = new Date();
         let currentView = 'player';
@@ -245,6 +257,7 @@
         const dom = {
             togglePlayerManagementBtn: document.getElementById('togglePlayerManagement'),
             playerManagementSection: document.getElementById('playerManagement'),
+            gameSelector: document.getElementById('gameSelector'), // NEW
             addPlayerBtn: document.getElementById('addPlayerBtn'),
             newPlayerNameInput: document.getElementById('newPlayerName'),
             addPlayerError: document.getElementById('addPlayerError'),
@@ -303,6 +316,113 @@
 
         // --- Utility Functions ---
         const utils = { getTodayDateString: () => new Date().toDateString(), formatTime: (timestamp) => { if (!timestamp) return ''; const date = timestamp.toDate ? timestamp.toDate() : (timestamp instanceof Date ? timestamp : null); if (!date) return ''; return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }, getMonthName: (monthIndex) => ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][monthIndex], getFullMonthName: (monthIndex) => ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][monthIndex], getPeriodRange: (period, baseDate = new Date()) => { let start = new Date(baseDate); let end = new Date(baseDate); switch (period) { case 'week': const dayOfWeek = start.getDay(); const diff = start.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); start = new Date(start.setDate(diff)); start.setHours(0, 0, 0, 0); end = new Date(start); end.setDate(start.getDate() + 6); end.setHours(23, 59, 59, 999); break; case 'month': start = new Date(start.getFullYear(), start.getMonth(), 1); start.setHours(0, 0, 0, 0); end = new Date(start.getFullYear(), start.getMonth() + 1, 0); end.setHours(23, 59, 59, 999); break; case 'year': start = new Date(start.getFullYear(), 0, 1); start.setHours(0, 0, 0, 0); end = new Date(start.getFullYear(), 11, 31); end.setHours(23, 59, 59, 999); break; } return { start, end }; }, sanitizeHTML: (str) => { const temp = document.createElement('div'); temp.textContent = str; return temp.innerHTML; }, pluralize: (count, singular, plural = null) => { plural = plural ?? singular + 's'; return count === 1 ? `${count} ${singular}` : `${count} ${plural}`; } };
+
+        // --- Game Management Functions (NEW) ---
+        async function loadGames() {
+            if (!db) {
+                games = [{ id: DEFAULT_GAME_ID, name: 'Rummikub' }];
+                return;
+            }
+            try {
+                const gamesCollection = collection(db, "games");
+                const gamesQuery = query(gamesCollection, orderBy("name"));
+                const snapshot = await getDocs(gamesQuery);
+                games = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                // **THE FIX IS HERE**
+                // Check if the canonical "Rummikub" game document exists by its specific ID.
+                const rummikubGameDoc = games.find(g => g.id === DEFAULT_GAME_ID);
+                if (!rummikubGameDoc) {
+                    // It's not in the database. We will create it to ensure data integrity.
+                    console.log(`Default game with ID '${DEFAULT_GAME_ID}' not found in DB. Creating it now.`);
+                    const defaultGameData = { name: 'Rummikub' };
+
+                    // Add it to our local list for this session so the UI is correct immediately.
+                    games.unshift({ id: DEFAULT_GAME_ID, ...defaultGameData });
+                    games.sort((a,b) => a.name.localeCompare(b.name));
+
+                    // Asynchronously save it to Firestore with the specific ID 'rummikub'.
+                    // This is a "self-healing" mechanism.
+                    const gameDocRef = doc(db, "games", DEFAULT_GAME_ID);
+                    setDoc(gameDocRef, { ...defaultGameData, createdAt: serverTimestamp() }).catch(e => {
+                        console.error("Failed to auto-create default Rummikub game in Firestore:", e);
+                    });
+                }
+            } catch (error) {
+                console.error("Error loading games:", error);
+                // Fallback if DB fails
+                games = [{ id: DEFAULT_GAME_ID, name: 'Rummikub' }];
+            }
+        }
+
+        function populateGameSelector() {
+            if (!dom.gameSelector) return;
+            dom.gameSelector.innerHTML = '';
+            games.forEach(game => {
+                const option = new Option(utils.sanitizeHTML(game.name), game.id);
+                dom.gameSelector.add(option);
+            });
+            dom.gameSelector.add(new Option("✨ Add New Game...", "add_new_game"));
+            dom.gameSelector.value = currentGameId;
+        }
+
+        function filterWinsForCurrentGame() {
+            wins = allWins.filter(w => (w.gameId || DEFAULT_GAME_ID) === currentGameId);
+            wins.sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis());
+            console.log(`Filtered to ${wins.length} wins for game: ${currentGameId}`);
+            // Update the main header title to reflect the current game
+            const currentGame = games.find(g => g.id === currentGameId);
+            const gameName = currentGame ? utils.sanitizeHTML(currentGame.name) : 'Game';
+            document.querySelector('header h1').textContent = `${gameName} Wins`;
+        }
+
+        async function addNewGame() {
+            const newGameName = prompt("Please enter the name for the new game:");
+            if (!newGameName || newGameName.trim() === '') {
+                dom.gameSelector.value = currentGameId;
+                return;
+            }
+            const trimmedName = newGameName.trim();
+
+            if (games.some(g => g.name.toLowerCase() === trimmedName.toLowerCase())) {
+                alert(`A game named "${trimmedName}" already exists.`);
+                dom.gameSelector.value = currentGameId;
+                return;
+            }
+
+            dom.gameSelector.disabled = true;
+            try {
+                const docRef = await addDoc(collection(db, "games"), {
+                    name: trimmedName,
+                    createdAt: serverTimestamp()
+                });
+                currentGameId = docRef.id;
+                localStorage.setItem('rummikubTrackerLastGameId', currentGameId);
+                await loadGames();
+                populateGameSelector();
+                filterWinsForCurrentGame();
+                renderApp();
+            } catch (error) {
+                console.error("Error adding new game:", error);
+                alert(`Failed to add new game: ${error.message}`);
+                dom.gameSelector.value = currentGameId;
+            } finally {
+                dom.gameSelector.disabled = false;
+            }
+        }
+
+        async function handleGameChange() {
+            const selectedValue = dom.gameSelector.value;
+            if (selectedValue === 'add_new_game') {
+                await addNewGame();
+            } else {
+                currentGameId = selectedValue;
+                localStorage.setItem('rummikubTrackerLastGameId', currentGameId);
+                filterWinsForCurrentGame();
+                renderApp();
+                if (getStoredGeminiApiKey()) handleGetGeminiInsight(false);
+            }
+        }
 
         // --- Audio Settings Management ---
         async function loadAudioPreferencesFromFirebase() { if (!db) { audioPreferences = []; return; } try { const prefsCollection = collection(db, AUDIO_PREFERENCES_COLLECTION); const prefsQuery = query(prefsCollection, orderBy("name")); const snapshot = await getDocs(prefsQuery); audioPreferences = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); } catch (error) { console.error("Error loading audio preferences:", error); dom.audioUrlStatus.innerHTML = `<span class="error">Failed to load audio list: ${error.message}</span>`; audioPreferences = []; } }
@@ -414,12 +534,12 @@
 
 
         // --- Firebase Data Functions ---
-        const loadData = async () => { if (!firebaseInitializedSuccessfully || !db) { console.error("loadData: Firebase not initialized or DB unavailable."); dom.noPlayersForScoringMsg.textContent = "Error: Database unavailable."; dom.noPlayersForScoringMsg.classList.remove('hidden'); dom.noWinsTodayMsg.textContent = "Error: Database unavailable."; dom.noWinsTodayMsg.classList.remove('hidden'); return; } console.log("loadData: Attempting to load data from Firestore..."); dom.noPlayersForScoringMsg.textContent = "Loading players..."; dom.noPlayersForScoringMsg.classList.remove('hidden'); dom.noWinsTodayMsg.textContent = "Loading wins..."; dom.noWinsTodayMsg.classList.remove('hidden'); try { const playersCollectionRef = collection(db, "players"); const playerQuery = query(playersCollectionRef, orderBy("name")); const playerSnapshot = await getDocs(playerQuery); players = playerSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); console.log(`loadData: Players loaded: ${players.length}`, players); const winsCollectionRef = collection(db, "wins"); const winSnapshot = await getDocs(winsCollectionRef); wins = winSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); wins = wins.filter(w => w.timestamp && typeof w.timestamp.toDate === 'function'); wins.sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis()); console.log(`loadData: Wins loaded: ${wins.length}`, wins); dom.noPlayersForScoringMsg.textContent = "Add players to track wins."; dom.noWinsTodayMsg.textContent = "No wins recorded yet today."; } catch (error) { console.error("loadData: Error loading data from Firestore:", error); if (dom.firebaseErrorDiv) { dom.firebaseErrorMessageSpan.textContent = `Failed to load game data. Error: ${error.message}. Check Firestore rules, API enablement, and console.`; dom.firebaseErrorDiv.style.display = 'block'; } players = []; wins = []; dom.noPlayersForScoringMsg.textContent = "Error loading players."; dom.noWinsTodayMsg.textContent = "Error loading wins."; } finally { renderApp(); } };
+        const loadData = async () => { if (!firebaseInitializedSuccessfully || !db) { console.error("loadData: Firebase not initialized or DB unavailable."); dom.noPlayersForScoringMsg.textContent = "Error: Database unavailable."; dom.noPlayersForScoringMsg.classList.remove('hidden'); dom.noWinsTodayMsg.textContent = "Error: Database unavailable."; dom.noWinsTodayMsg.classList.remove('hidden'); return; } console.log("loadData: Attempting to load data from Firestore..."); dom.noPlayersForScoringMsg.textContent = "Loading players..."; dom.noPlayersForScoringMsg.classList.remove('hidden'); dom.noWinsTodayMsg.textContent = "Loading wins..."; dom.noWinsTodayMsg.classList.remove('hidden'); try { const playersCollectionRef = collection(db, "players"); const playerQuery = query(playersCollectionRef, orderBy("name")); const playerSnapshot = await getDocs(playerQuery); players = playerSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); console.log(`loadData: Players loaded: ${players.length}`, players); const winsCollectionRef = collection(db, "wins"); const winSnapshot = await getDocs(winsCollectionRef); allWins = winSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); allWins = allWins.filter(w => w.timestamp && typeof w.timestamp.toDate === 'function'); console.log(`loadData: Total wins loaded (all games): ${allWins.length}`); filterWinsForCurrentGame(); console.log(`loadData: Wins loaded: ${wins.length}`, wins); dom.noPlayersForScoringMsg.textContent = "Add players to track wins."; dom.noWinsTodayMsg.textContent = "No wins recorded yet today."; } catch (error) { console.error("loadData: Error loading data from Firestore:", error); if (dom.firebaseErrorDiv) { dom.firebaseErrorMessageSpan.textContent = `Failed to load game data. Error: ${error.message}. Check Firestore rules, API enablement, and console.`; dom.firebaseErrorDiv.style.display = 'block'; } players = []; allWins = []; wins = []; dom.noPlayersForScoringMsg.textContent = "Error loading players."; dom.noWinsTodayMsg.textContent = "Error loading wins."; } finally { renderApp(); } };
         const addPlayer = async (name) => { if (!firebaseInitializedSuccessfully || !db) { alert("Database connection error. Cannot add player."); return; } const tN = name.trim(); if (!tN) { dom.addPlayerError.textContent = "Name empty."; return; } if (players.some(p => p.name.toLowerCase() === tN.toLowerCase())) { dom.addPlayerError.textContent = "Name exists."; return; } dom.addPlayerError.textContent = ""; dom.addPlayerBtn.disabled = true; try { const dR = await addDoc(collection(db, "players"), { name: tN }); players.push({ id: dR.id, name: tN }); players.sort((a, b) => a.name.localeCompare(b.name)); renderApp(); dom.newPlayerNameInput.value = ''; if (getStoredGeminiApiKey()) handleGetGeminiInsight(false); } catch (error) { console.error("Error adding player:", error); dom.addPlayerError.textContent = `Failed to add player: ${error.message}`; } finally { dom.addPlayerBtn.disabled = false; } };
-        const deletePlayer = async (playerId) => { if (!firebaseInitializedSuccessfully || !db) { alert("Database connection error. Cannot delete player."); return; } const p = players.find(pl => pl.id === playerId); if (!p || !confirm(`Delete ${utils.sanitizeHTML(p.name)}? Wins remain as 'Unknown'.`)) return; const delBtn = dom.playerListManagementUl.querySelector(`.player-management-entry[data-player-id="${playerId}"] .delete-player-btn`); if (delBtn) delBtn.disabled = true; try { await deleteDoc(doc(db, "players", playerId)); players = players.filter(pl => pl.id !== playerId); renderApp(); if (getStoredGeminiApiKey()) handleGetGeminiInsight(false); } catch (error) { console.error("Error deleting player:", error); alert(`Failed: ${error.message}`); if (delBtn) delBtn.disabled = false; } };
+        const deletePlayer = async (playerId) => { if (!firebaseInitializedSuccessfully || !db) { alert("Database connection error. Cannot delete player."); return; } const p = players.find(pl => pl.id === playerId); if (!p || !confirm(`Delete ${utils.sanitizeHTML(p.name)}? This player will be removed from all games. Their past wins will remain attributed to 'Unknown Player'.`)) return; const delBtn = dom.playerListManagementUl.querySelector(`.player-management-entry[data-player-id="${playerId}"] .delete-player-btn`); if (delBtn) delBtn.disabled = true; try { await deleteDoc(doc(db, "players", playerId)); players = players.filter(pl => pl.id !== playerId); renderApp(); if (getStoredGeminiApiKey()) handleGetGeminiInsight(false); } catch (error) { console.error("Error deleting player:", error); alert(`Failed: ${error.message}`); if (delBtn) delBtn.disabled = false; } };
         const renamePlayer = async (playerId, newName) => { if (!firebaseInitializedSuccessfully || !db) { alert("Database connection error. Cannot rename player."); return false; } const tN = newName.trim(); if (!tN) { alert("Name empty."); return false; } if (players.some(p => p.id !== playerId && p.name.toLowerCase() === tN.toLowerCase())) { alert("Name exists."); return false; } const pI = players.findIndex(p => p.id === playerId); if (pI === -1) return false; const entry = dom.playerListManagementUl.querySelector(`.player-management-entry[data-player-id="${playerId}"]`); const saveBtn = entry?.querySelector('.save-rename-btn'); const cancelBtn = entry?.querySelector('.cancel-rename-btn'); if(saveBtn) saveBtn.disabled = true; if(cancelBtn) cancelBtn.disabled = true; try { await updateDoc(doc(db, "players", playerId), { name: tN }); players[pI].name = tN; players.sort((a, b) => a.name.localeCompare(b.name)); renderApp(); if (getStoredGeminiApiKey()) handleGetGeminiInsight(false); return true; } catch (error) { console.error("Error renaming player:", error); alert(`Failed: ${error.message}`); if(saveBtn) saveBtn.disabled = false; if(cancelBtn) cancelBtn.disabled = false; return false; } };
-        const recordWin = async (playerId) => { if (!firebaseInitializedSuccessfully || !db) { alert("Database connection error. Cannot record win."); return; } const player = players.find(pl => pl.id === playerId); if (!player) return; const winButton = dom.scoreTrackingListUl.querySelector(`button.add-win-btn[data-player-id="${playerId}"]`); const playerInfoDiv = dom.scoreTrackingListUl.querySelector(`li[data-player-id="${playerId}"] .player-info`); if (winButton) winButton.disabled = true; const existingFeedback = playerInfoDiv?.querySelector('.win-feedback'); if (existingFeedback) existingFeedback.remove(); try { const docRef = await addDoc(collection(db, "wins"), { playerId: playerId, timestamp: serverTimestamp() }); const newWin = { id: docRef.id, playerId: playerId, timestamp: Timestamp.now() }; wins.unshift(newWin); const playerName = utils.sanitizeHTML(player.name); const feedbackSpan = document.createElement('span'); feedbackSpan.className = 'win-feedback'; feedbackSpan.textContent = `Win added for ${playerName}!`; if (playerInfoDiv) { playerInfoDiv.appendChild(feedbackSpan); setTimeout(() => { feedbackSpan.remove(); }, 3000); } renderTodaysWinsList(); renderDashboard(); if (getStoredGeminiApiKey()) handleGetGeminiInsight(false); } catch (error) { console.error("Error recording win:", error); alert(`Failed to record win: ${error.message}`); } finally { setTimeout(() => { if (winButton) winButton.disabled = false; }, 500); } };
-        const deleteWin = async (winId) => { if (!firebaseInitializedSuccessfully || !db) { alert("Database connection error. Cannot delete win."); return; } const wI = wins.findIndex(w => w.id === winId); if (wI === -1) return; const wD = wins[wI]; if (!wD.timestamp || typeof wD.timestamp.toDate !== 'function') return; const pN = players.find(p=>p.id === wD.playerId)?.name ?? 'Unknown Player'; if (!confirm(`Delete win for ${utils.sanitizeHTML(pN)} at ${utils.formatTime(wD.timestamp)}?`)) return; const delBtn = dom.todaysWinsListUl.querySelector(`li[data-win-id="${winId}"] .delete-win-btn`); if(delBtn) delBtn.disabled = true; try { await deleteDoc(doc(db, "wins", winId)); wins.splice(wI, 1); renderTodaysWinsList(); renderDashboard(); if (getStoredGeminiApiKey()) handleGetGeminiInsight(false); } catch (error) { console.error("Error deleting win:", error); alert(`Failed: ${error.message}`); if(delBtn) delBtn.disabled = false; } };
+        const recordWin = async (playerId) => { if (!firebaseInitializedSuccessfully || !db) { alert("Database connection error. Cannot record win."); return; } const player = players.find(pl => pl.id === playerId); if (!player) return; const winButton = dom.scoreTrackingListUl.querySelector(`button.add-win-btn[data-player-id="${playerId}"]`); const playerInfoDiv = dom.scoreTrackingListUl.querySelector(`li[data-player-id="${playerId}"] .player-info`); if (winButton) winButton.disabled = true; const existingFeedback = playerInfoDiv?.querySelector('.win-feedback'); if (existingFeedback) existingFeedback.remove(); try { const winData = { playerId: playerId, timestamp: serverTimestamp(), gameId: currentGameId }; const docRef = await addDoc(collection(db, "wins"), winData); const newWin = { id: docRef.id, playerId: playerId, timestamp: Timestamp.now(), gameId: currentGameId }; allWins.unshift(newWin); filterWinsForCurrentGame(); const playerName = utils.sanitizeHTML(player.name); const feedbackSpan = document.createElement('span'); feedbackSpan.className = 'win-feedback'; feedbackSpan.textContent = `Win added for ${playerName}!`; if (playerInfoDiv) { playerInfoDiv.appendChild(feedbackSpan); setTimeout(() => { feedbackSpan.remove(); }, 3000); } renderTodaysWinsList(); renderDashboard(); if (getStoredGeminiApiKey()) handleGetGeminiInsight(false); } catch (error) { console.error("Error recording win:", error); alert(`Failed to record win: ${error.message}`); } finally { setTimeout(() => { if (winButton) winButton.disabled = false; }, 500); } };
+        const deleteWin = async (winId) => { if (!firebaseInitializedSuccessfully || !db) { alert("Database connection error. Cannot delete win."); return; } const winInAll = allWins.find(w => w.id === winId); if (!winInAll) return; const pN = players.find(p=>p.id === winInAll.playerId)?.name ?? 'Unknown Player'; if (!confirm(`Delete win for ${utils.sanitizeHTML(pN)} at ${utils.formatTime(winInAll.timestamp)}?`)) return; const delBtn = dom.todaysWinsListUl.querySelector(`li[data-win-id="${winId}"] .delete-win-btn`); if(delBtn) delBtn.disabled = true; try { await deleteDoc(doc(db, "wins", winId)); allWins = allWins.filter(w => w.id !== winId); filterWinsForCurrentGame(); renderTodaysWinsList(); renderDashboard(); if (getStoredGeminiApiKey()) handleGetGeminiInsight(false); } catch (error) { console.error("Error deleting win:", error); alert(`Failed: ${error.message}`); if(delBtn) delBtn.disabled = false; } };
         const getWinsForPeriodLocal = (period, baseDate = new Date()) => { const { start, end } = utils.getPeriodRange(period, baseDate); const sT = start.getTime(); const eT = end.getTime(); return wins.filter(w => { if (!w.timestamp || typeof w.timestamp.toDate !== 'function') return false; const wT = w.timestamp.toDate().getTime(); return wT >= sT && wT <= eT; }); };
         const getWinsForYearLocal = (year) => { const s = new Date(year, 0, 1); const e = new Date(year, 11, 31, 23, 59, 59, 999); const sT = s.getTime(); const eT = e.getTime(); return wins.filter(w => { if (!w.timestamp || typeof w.timestamp.toDate !== 'function') return false; const wT = w.timestamp.toDate().getTime(); return wT >= sT && wT <= eT; }); };
 
@@ -829,7 +949,28 @@
             } catch (error) { console.error('Error fetching from Gemini:', error); throw error; }
         }
 
-        function prepareDataForGemini() { let dataSummary = "Rummikub Game Stats:\n"; if (players.length === 0 && firebaseInitializedSuccessfully) return dataSummary + "No players yet. It's a lonely game so far!\n"; if (!firebaseInitializedSuccessfully) return dataSummary + "Database not connected. Cannot provide stats.\n"; dataSummary += `Players: ${players.map(p => utils.sanitizeHTML(p.name)).join(', ')}\n\n`; const totalWinsByPlayer = players.map(p => ({ name: utils.sanitizeHTML(p.name), count: wins.filter(w => w.playerId === p.id).length })).sort((a, b) => b.count - a.count); dataSummary += "Overall Leaderboard (All Time):\n"; if (totalWinsByPlayer.some(p => p.count > 0)) { totalWinsByPlayer.forEach(p => dataSummary += `- ${p.name}: ${utils.pluralize(p.count, 'win')}\n`); } else { dataSummary += "- No one has won yet! The trophy is still up for grabs!\n"; } dataSummary += "\n"; const { start: currentStart, end: currentEnd } = utils.getPeriodRange(currentDashboardPeriod, currentDisplayDate); const currentPeriodWinsData = getWinsForPeriodLocal(currentDashboardPeriod, currentDisplayDate); let currentPeriodTitle = ''; switch (currentDashboardPeriod) { case 'week': currentPeriodTitle = `This Week (${currentStart.toLocaleDateString()} - ${currentEnd.toLocaleDateString()})`; break; case 'month': currentPeriodTitle = `This Month (${utils.getFullMonthName(currentDisplayDate.getMonth())} ${currentDisplayDate.getFullYear()})`; break; case 'year': currentPeriodTitle = `This Year (${currentDisplayDate.getFullYear()})`; break; } dataSummary += `Performance - ${currentPeriodTitle}:\n`; if (currentPeriodWinsData.length > 0) { const winsByPlayer = players.reduce((acc, p) => ({...acc, [p.id]: { name: utils.sanitizeHTML(p.name), count: 0 }}), {}); currentPeriodWinsData.forEach(w => { if (winsByPlayer[w.playerId]) winsByPlayer[w.playerId].count++; }); Object.values(winsByPlayer).filter(p=>p.count > 0).sort((a,b) => b.count - a.count).forEach(p => dataSummary += `- ${p.name}: ${utils.pluralize(p.count, 'win')}\n`); } else { dataSummary += `- No wins recorded in this period. Is everyone on vacation?\n`; } dataSummary += "\n"; let prevDate = new Date(currentDisplayDate); let prevPeriodTitle = ""; if (currentDashboardPeriod === 'week') { prevDate.setDate(prevDate.getDate() - 7); prevPeriodTitle = "Last Week"; } else if (currentDashboardPeriod === 'month') { prevDate.setMonth(prevDate.getMonth() - 1); prevPeriodTitle = "Last Month"; } else if (currentDashboardPeriod === 'year') { prevDate.setFullYear(prevDate.getFullYear() - 1); prevPeriodTitle = "Last Year"; } if (prevPeriodTitle) { const prevPeriodWinsData = getWinsForPeriodLocal(currentDashboardPeriod, prevDate); dataSummary += `For Comparison - ${prevPeriodTitle}:\n`; if (prevPeriodWinsData.length > 0) { const winsByPlayerPrev = players.reduce((acc, p) => ({...acc, [p.id]: { name: utils.sanitizeHTML(p.name), count: 0 }}), {}); prevPeriodWinsData.forEach(w => { if (winsByPlayerPrev[w.playerId]) winsByPlayerPrev[w.playerId].count++; }); Object.values(winsByPlayerPrev).filter(p=>p.count > 0).sort((a,b) => b.count - a.count).forEach(p => dataSummary += `- ${p.name}: ${utils.pluralize(p.count, 'win')}\n`); } else { dataSummary += `- No wins recorded in ${prevPeriodTitle}. A fresh start perhaps!\n`; } dataSummary += "\n"; } const threeDaysAgo = new Date(); threeDaysAgo.setDate(threeDaysAgo.getDate() - 2); threeDaysAgo.setHours(0,0,0,0); const recentWinsRaw = wins.filter(w => w.timestamp?.toDate() >= threeDaysAgo); if(recentWinsRaw.length > 0){ dataSummary += "Hot Streaks (Last 3 Days including Today):\n"; const recentSummary = recentWinsRaw.reduce((acc,w) => { const pName = players.find(p=>p.id === w.playerId)?.name || "An Unknown Force"; acc[utils.sanitizeHTML(pName)] = (acc[utils.sanitizeHTML(pName)] || 0) + 1; return acc; }, {}); Object.entries(recentSummary).sort(([,a],[,b]) => b-a).forEach(([name, count]) => dataSummary += `- ${name} won ${utils.pluralize(count, 'time')}\n`); } else { dataSummary += "Recent Activity: A bit quiet lately. Time to shuffle the tiles!\n" } return dataSummary; }
+        function prepareDataForGemini() { 
+            const currentGameName = games.find(g => g.id === currentGameId)?.name || 'This Game';
+            let dataSummary = `${currentGameName} Game Stats:\n`;
+            if (players.length === 0 && firebaseInitializedSuccessfully) return dataSummary + "No players yet. It's a lonely game so far!\n";
+            if (!firebaseInitializedSuccessfully) return dataSummary + "Database not connected. Cannot provide stats.\n";
+            dataSummary += `Players: ${players.map(p => utils.sanitizeHTML(p.name)).join(', ')}\n\n`;
+            const totalWinsByPlayer = players.map(p => ({ name: utils.sanitizeHTML(p.name), count: wins.filter(w => w.playerId === p.id).length })).sort((a, b) => b.count - a.count);
+            dataSummary += `Leaderboard for ${currentGameName} (All Time):\n`;
+            if (totalWinsByPlayer.some(p => p.count > 0)) { totalWinsByPlayer.forEach(p => dataSummary += `- ${p.name}: ${utils.pluralize(p.count, 'win')}\n`); }
+            else { dataSummary += `- No one has won yet in ${currentGameName}! The trophy is still up for grabs!\n`; }
+            dataSummary += "\n";
+            const { start: currentStart, end: currentEnd } = utils.getPeriodRange(currentDashboardPeriod, currentDisplayDate);
+            const currentPeriodWinsData = getWinsForPeriodLocal(currentDashboardPeriod, currentDisplayDate);
+            let currentPeriodTitle = '';
+            switch (currentDashboardPeriod) {
+                case 'week': currentPeriodTitle = `This Week (${currentStart.toLocaleDateString()} - ${currentEnd.toLocaleDateString()})`; break;
+                case 'month': currentPeriodTitle = `This Month (${utils.getFullMonthName(currentDisplayDate.getMonth())} ${currentDisplayDate.getFullYear()})`; break;
+                case 'year': currentPeriodTitle = `This Year (${currentDisplayDate.getFullYear()})`; break;
+            }
+            dataSummary += `Performance - ${currentPeriodTitle}:\n`;
+            if (currentPeriodWinsData.length > 0) { const winsByPlayer = players.reduce((acc, p) => ({...acc, [p.id]: { name: utils.sanitizeHTML(p.name), count: 0 }}), {}); currentPeriodWinsData.forEach(w => { if (winsByPlayer[w.playerId]) winsByPlayer[w.playerId].count++; }); Object.values(winsByPlayer).filter(p=>p.count > 0).sort((a,b) => b.count - a.count).forEach(p => dataSummary += `- ${p.name}: ${utils.pluralize(p.count, 'win')}\n`); } else { dataSummary += `- No wins recorded in this period. Is everyone on vacation?\n`; } dataSummary += "\n"; let prevDate = new Date(currentDisplayDate); let prevPeriodTitle = ""; if (currentDashboardPeriod === 'week') { prevDate.setDate(prevDate.getDate() - 7); prevPeriodTitle = "Last Week"; } else if (currentDashboardPeriod === 'month') { prevDate.setMonth(prevDate.getMonth() - 1); prevPeriodTitle = "Last Month"; } else if (currentDashboardPeriod === 'year') { prevDate.setFullYear(prevDate.getFullYear() - 1); prevPeriodTitle = "Last Year"; } if (prevPeriodTitle) { const prevPeriodWinsData = getWinsForPeriodLocal(currentDashboardPeriod, prevDate); dataSummary += `For Comparison - ${prevPeriodTitle}:\n`; if (prevPeriodWinsData.length > 0) { const winsByPlayerPrev = players.reduce((acc, p) => ({...acc, [p.id]: { name: utils.sanitizeHTML(p.name), count: 0 }}), {}); prevPeriodWinsData.forEach(w => { if (winsByPlayerPrev[w.playerId]) winsByPlayerPrev[w.playerId].count++; }); Object.values(winsByPlayerPrev).filter(p=>p.count > 0).sort((a,b) => b.count - a.count).forEach(p => dataSummary += `- ${p.name}: ${utils.pluralize(p.count, 'win')}\n`); } else { dataSummary += `- No wins recorded in ${prevPeriodTitle}. A fresh start perhaps!\n`; } dataSummary += "\n"; } const threeDaysAgo = new Date(); threeDaysAgo.setDate(threeDaysAgo.getDate() - 2); threeDaysAgo.setHours(0,0,0,0); const recentWinsRaw = wins.filter(w => w.timestamp?.toDate() >= threeDaysAgo); if(recentWinsRaw.length > 0){ dataSummary += "Hot Streaks (Last 3 Days including Today):\n"; const recentSummary = recentWinsRaw.reduce((acc,w) => { const pName = players.find(p=>p.id === w.playerId)?.name || "An Unknown Force"; acc[utils.sanitizeHTML(pName)] = (acc[utils.sanitizeHTML(pName)] || 0) + 1; return acc; }, {}); Object.entries(recentSummary).sort(([,a],[,b]) => b-a).forEach(([name, count]) => dataSummary += `- ${name} won ${utils.pluralize(count, 'time')}\n`); } else { dataSummary += "Recent Activity: A bit quiet lately. Time to shuffle the tiles!\n" } return dataSummary;
+        }
 
         async function handleGetGeminiInsight(isButtonPress = true) {
             const apiKey = dom.geminiApiKeyInput.value.trim() || getStoredGeminiApiKey();
@@ -860,12 +1001,13 @@
             dom.geminiInsightResultDiv.innerHTML = loadingMsg;
 
             const gameDataSummary = prepareDataForGemini();
+            const currentGameName = games.find(g => g.id === currentGameId)?.name || 'the game';
             const promptForLongInsight = `
             **Primary Directive: Your ONLY output will be 1 sentence of text. No preambles, no explanations, no apologies, nothing but the commentary itself.**
-You are a witty, observant, and slightly sarcastic Rummikub game commentator with a knack for comedic timing. Your audience loves your playful jabs and insightful, humorous takes. Your commentary should sound like a friend chatting excitedly, sometimes conspiratorially, with another friend about the game.
+You are a witty, observant, and slightly sarcastic game commentator with a knack for comedic timing. Your audience loves your playful jabs and insightful, humorous takes. Your commentary should sound like a friend chatting excitedly, sometimes conspiratorially, with another friend about the game.
 
-Based on the Rummikub game stats below, provide a funny and insightful commentary. 
-CRITITAL: use Rummi only instead of the entire RUMMIKUB word.
+Based on the game stats below for the game "${currentGameName}", provide a funny and insightful commentary. 
+CRITITAL: if the game is Rummikub, use Rummi only instead of the entire RUMMIKUB word. For other games, you can use their full name.
 
 **Your Comedic Style & Delivery (for Text Generation):**
 *   Natural & Conversational: Write like you're speaking directly to a friend. Use informal language, contractions, and a relaxed tone. Think stand-up comedian observing the game.
@@ -919,13 +1061,14 @@ ${gameDataSummary}
         }
 
         function getAiTimerCommentaryPromptText(gameDataSummary) {
+            const currentGameName = games.find(g => g.id === currentGameId)?.name || 'the game';
             return `
 **Primary Directive: Your ONLY output will be ONE (1) single line of text. No preambles, no explanations, no apologies, nothing but the commentary itself.**
 **Secondary Directive: Never prefrence one single player. Randomize the punch line and the players. It's not known who the next player is, so never say is a specific player's turn. Use jokes from Grabriel Iglesias, Kevin Hart, or Dave Chappelle.**
-You are a witty, observant, and heavily sarcastic and heavy humoristic Rummikub game commentator for a timer with a knack for short, punchy lines. Your audience loves your playful jabs and insightful, humorous takes delivered quickly.
-Based on the Rummikub game stats below, provide a funny and insightful commentary. Also, make more generic punch lines to point out that it's the next player's turn.
+You are a witty, observant, and heavily sarcastic and heavy humoristic game commentator for a timer with a knack for short, punchy lines. Your audience loves your playful jabs and insightful, humorous takes delivered quickly.
+Based on the game stats below for "${currentGameName}", provide a funny and insightful commentary. Also, make more generic punch lines to point out that it's the next player's turn.
 CRITICAL: Your response MUST be 7-12 words ONLY. This is for a quick audio alert. This is for text-to-speech google API for Chirp3-HD voices so format it so it sounds natural with nuances and expressions.
-CRITICAL: DO NOT always mentioned the top players with wins, also focus on those with low scores. Mix it up. Also, use "Rummi", NEVER use the full word rummikub.
+CRITICAL: DO NOT always mentioned the top players with wins, also focus on those with low scores. Mix it up. If the game is Rummikub, use "Rummi", NEVER use the full word rummikub.
 CRITICAL: JOVANY is said "Jovaaany" so spell it like that with emphasis in VAh. Mike is said Mike. Beatriz is Beatriz. Rosie is spell the same, Rosie.
 
 Your Comedic Style & Delivery (for Text Generation):
@@ -1045,6 +1188,7 @@ ${gameDataSummary}
 
         // --- Event Listeners ---
         dom.togglePlayerManagementBtn.addEventListener('click', () => { dom.playerManagementSection.classList.toggle('hidden'); const i = dom.playerManagementSection.classList.contains('hidden'); dom.togglePlayerManagementBtn.textContent = i ? '⚙️ Manage' : '🔽 Close'; });
+        dom.gameSelector.addEventListener('change', handleGameChange);
         dom.addPlayerBtn.addEventListener('click', () => addPlayer(dom.newPlayerNameInput.value));
         dom.newPlayerNameInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') { e.preventDefault(); addPlayer(dom.newPlayerNameInput.value); } dom.addPlayerError.textContent = ""; });
         dom.playerListManagementUl.addEventListener('click', (e) => { const t = e.target; const pE = t.closest('.player-management-entry'); if (!pE) return; const pId = pE.dataset.playerId; if (t.classList.contains('delete-player-btn')) { deletePlayer(pId); } else if (t.classList.contains('rename-btn')) { dom.playerListManagementUl.querySelectorAll('.rename-controls:not(.hidden)').forEach(c => { const en = c.closest('.player-management-entry'); if (en && en !== pE) { en.querySelector('.rename-controls').classList.add('hidden'); en.querySelector('.player-name-display').classList.remove('hidden'); en.querySelector('.action-buttons').classList.remove('hidden'); } }); pE.querySelector('.player-name-display').classList.add('hidden'); pE.querySelector('.action-buttons').classList.add('hidden'); const rC = pE.querySelector('.rename-controls'); rC.classList.remove('hidden'); rC.querySelector('.rename-input').focus(); } else if (t.classList.contains('save-rename-btn')) { renamePlayer(pId, pE.querySelector('.rename-input').value); } else if (t.classList.contains('cancel-rename-btn')) { pE.querySelector('.rename-input').value = pE.querySelector('.player-name-display').textContent; pE.querySelector('.rename-controls').classList.add('hidden'); pE.querySelector('.player-name-display').classList.remove('hidden'); pE.querySelector('.action-buttons').classList.remove('hidden'); } });
@@ -1129,14 +1273,24 @@ ${gameDataSummary}
             if (firebaseInitializedSuccessfully) {
                 console.log("Proceeding with Firebase-dependent setup.");
                 try {
+                    const lastGameId = localStorage.getItem('rummikubTrackerLastGameId');
+                    if (lastGameId) {
+                        currentGameId = lastGameId;
+                    }
+                    
+                    await loadGames();
+                    populateGameSelector();
+                    
                     await loadAudioPreferencesFromFirebase();
                     currentActiveAudioPreferenceId = await getActiveAudioPreferenceIdFromFirebase();
                     populateAudioSourceSelect();
                     await applyAudioChoice(currentActiveAudioPreferenceId);
                     updateCustomAudioUI();
                     console.log("Audio preferences loaded.");
+
                     await loadData();
                     console.log("Game data loading initiated (players, wins).");
+
                     if (getStoredGeminiApiKey()) {
                         console.log("Attempting to fetch initial Gemini insight.");
                         handleGetGeminiInsight(false);
@@ -1145,7 +1299,7 @@ ${gameDataSummary}
                         dom.getGeminiInsightBtn.disabled = true;
                     }
                 } catch (error) {
-                    console.error("Error during Firebase-dependent setup (audio/data/gemini):", error);
+                    console.error("Error during Firebase-dependent setup (games/audio/data/gemini):", error);
                     renderApp(); // Render basic structure even on error
                     const errorMsg = "Error loading app data. Check console.";
                     dom.noPlayersForScoringMsg.textContent = errorMsg;
@@ -1156,10 +1310,12 @@ ${gameDataSummary}
                 }
             } else {
                 console.warn("Firebase not initialized. Skipping Firebase-dependent setup.");
-                populateAudioSourceSelect(); // Still populate with default, AI, Random
-                applyAudioChoice("default"); // Apply default
+                games = [{ id: DEFAULT_GAME_ID, name: 'Rummikub' }];
+                populateGameSelector();
+                populateAudioSourceSelect();
+                applyAudioChoice("default"); 
                 updateCustomAudioUI();
-                renderApp(); // Render basic structure
+                renderApp(); 
                 dom.noPlayersForScoringMsg.textContent = "Database connection failed. Cannot load players.";
                 dom.noPlayersForScoringMsg.classList.remove('hidden');
                 dom.noWinsTodayMsg.textContent = "Database connection failed.Cannot load wins.";
