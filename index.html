@@ -940,9 +940,48 @@
         }
 
         function saveImageCache() {
-            if (geminiImageCache.length > 0) {
-                localStorage.setItem(GEMINI_IMAGE_CACHE_KEY, JSON.stringify(geminiImageCache.slice(0, 5))); // Save latest 5
+            // If the cache is empty, just ensure it's cleared from localStorage.
+            if (geminiImageCache.length === 0) {
+                localStorage.removeItem(GEMINI_IMAGE_CACHE_KEY);
+                return;
             }
+
+            // Create a mutable copy to attempt saving.
+            let cacheToSave = [...geminiImageCache];
+
+            // Try to save, and if it fails due to quota, reduce and retry.
+            while (cacheToSave.length > 0) {
+                try {
+                    // Attempt to save the current state of the cache copy.
+                    localStorage.setItem(GEMINI_IMAGE_CACHE_KEY, JSON.stringify(cacheToSave));
+
+                    // If successful, update the global cache to match what was saved.
+                    // This is important because the global cache might have more items than what could be saved.
+                    if (geminiImageCache.length !== cacheToSave.length) {
+                         console.log(`Successfully saved a reduced image cache of ${cacheToSave.length} items.`);
+                         geminiImageCache = cacheToSave;
+                         window.geminiImageCache = geminiImageCache; // Update exposed cache
+                    }
+                    return; // Exit the function successfully
+                } catch (e) {
+                    // Check if the error is a quota error.
+                    if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || (e.message && e.message.toLowerCase().includes('quota'))) {
+                        console.warn(`Quota exceeded when trying to save ${cacheToSave.length} images. Removing oldest image and retrying.`);
+                        // Remove the oldest item (from the end of the array) and try again.
+                        cacheToSave.pop();
+                    } else {
+                        // If it's a different error, log it and stop.
+                        console.error("Failed to save image cache due to an unexpected error:", e);
+                        return; // Exit on other errors
+                    }
+                }
+            }
+
+            // If the loop finishes, it means we couldn't even save a single image.
+            console.warn("Could not save any images to cache. Clearing cache.");
+            localStorage.removeItem(GEMINI_IMAGE_CACHE_KEY);
+            geminiImageCache = []; // Clear the in-memory cache as well
+            window.geminiImageCache = geminiImageCache;
         }
 
         function loadImageCache() {
