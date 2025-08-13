@@ -853,12 +853,7 @@
                     body: JSON.stringify({
                         input: { text: textToSpeak },
                         voice: { languageCode: 'en-US', name: selectedVoice.name },
-                        audioConfig: {
-                            audioEncoding: 'MP3',
-                            speakingRate: 1.1,
-                            pitch: 0,
-                            effectsProfileId: ['telephony-class-application']
-                        }
+                        audioConfig: { audioEncoding: 'MP3', speakingRate: 1.1, pitch: 0 }
                     })
                 });
                 if (!response.ok) { const errorData = await response.json(); console.error('Google TTS API Error:', errorData); let errorMessage = `TTS API Error (${response.status}): ${errorData?.error?.message || response.statusText}.`; errorMessage += " Ensure Cloud Text-to-Speech API is enabled for your key and project."; throw new Error(errorMessage); }
@@ -895,12 +890,7 @@
                     body: JSON.stringify({
                         input: { text: textToSpeak },
                         voice: { languageCode: 'en-US', name: selectedVoice.name },
-                        audioConfig: {
-                            audioEncoding: 'MP3',
-                            speakingRate: 1.1,
-                            pitch: 0,
-                            effectsProfileId: ['telephony-class-application']
-                        }
+                        audioConfig: { audioEncoding: 'MP3', speakingRate: 1.1, pitch: 0 }
                     })
                 });
                 if (!response.ok) { const errorData = await response.json(); console.error('Google TTS API Error (Timer):', errorData); throw new Error(`TTS API Error (${response.status}): ${errorData?.error?.message || response.statusText}`); }
