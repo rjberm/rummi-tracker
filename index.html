@@ -452,6 +452,9 @@
             const defaultOption = new Option("Default Sound", "default");
             dom.audioSourceSelect.add(defaultOption);
 
+            const randomMixOption = new Option("🔀 Random Mix (Sounds + AI)", RANDOM_MIX_AUDIO_ID);
+            dom.audioSourceSelect.add(randomMixOption);
+
             audioPreferences.forEach(pref => {
                 const option = new Option(utils.sanitizeHTML(pref.name), pref.id);
                 dom.audioSourceSelect.add(option);
@@ -656,15 +659,8 @@
             unlockAudioContext(); // Ensure context is active before any sound attempt
 
             if (currentActiveAudioPreferenceId === RANDOM_MIX_AUDIO_ID) {
-                const playAI = Math.random() < 0.5; // 50% chance to play AI sound
-
-                if (playAI && getStoredGeminiApiKey() && firebaseInitializedSuccessfully) {
-                    console.log("Random Mix: Choosing AI commentator.");
-                    await fetchAndPlayAiTimerCommentary(true);
-                } else {
-                    console.log("Random Mix: Choosing existing sound (or AI not possible/chosen).");
-                    await playRandomExistingSound();
-                }
+                console.log("Random Mix: Choosing existing sound.");
+                await playRandomExistingSound();
             } else if (currentActiveAudioPreferenceId === AI_COMMENTATOR_ID) {
                 if (preloadedAiCommentaryUrl) {
                     console.log("Playing preloaded AI commentary.");
