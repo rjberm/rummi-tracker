@@ -95,6 +95,8 @@
         #geminiApiKeyInputGroup input[type="text"] { margin-bottom: 5px; }
         #geminiApiKeyNote { font-size:0.8em; color:#555; margin-top: 0; margin-bottom: 10px;}
         #geminiInsightResult { margin-top: 10px; padding: 12px; background-color: #ffffff; border-radius: 4px; min-height: 40px; border-left: 4px solid #ffc107; line-height: 1.5; white-space: pre-wrap; /* Ensures full text is shown and wraps */ overflow-y: auto; /* Adds scroll if content overflows a max height */ max-height: 200px; /* Example max height */ }
+        #geminiImageContainer { margin-top: 15px; text-align: center; }
+        #geminiImage { max-width: 100%; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: none; }
         .gemini-buttons-flex { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
         #changeApiKeyBtn { background-color: #6c757d; font-size: 0.9rem; padding: 8px 12px;}
         #firebaseConfigWarning, #firebaseError {
@@ -142,6 +144,9 @@
 
             <div id="geminiInsightResult">
                 Enter your API Key above to get started...
+            </div>
+            <div id="geminiImageContainer">
+                <img id="geminiImage" src="" alt="AI Generated Image" />
             </div>
             <div class="gemini-buttons-flex">
                 <button id="getGeminiInsightBtn">Get New Funny Insight 😂</button>
@@ -307,6 +312,8 @@
             changeApiKeyBtn: document.getElementById('changeApiKeyBtn'),
             getGeminiInsightBtn: document.getElementById('getGeminiInsightBtn'),
             geminiInsightResultDiv: document.getElementById('geminiInsightResult'),
+            geminiImageContainer: document.getElementById('geminiImageContainer'),
+            geminiImage: document.getElementById('geminiImage'),
             geminiButtonsFlexDiv: document.querySelector('.gemini-buttons-flex'),
             listenToInsightBtn: null, 
             firebaseConfigWarningDiv: document.getElementById('firebaseConfigWarning'),
@@ -917,6 +924,51 @@
             } catch (error) { console.error('Error fetching from Gemini:', error); throw error; }
         }
 
+        async function fetchImageFromGemini(apiKey, promptText) {
+            const model = "gemini-2.0-flash-preview-image-generation";
+            const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [{ text: promptText }]
+                        }],
+                        generationConfig: {
+                            responseModalities: ["TEXT", "IMAGE"]
+                        }
+                    }),
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    console.error('Gemini Image API Error:', errorData);
+                    throw new Error(`Gemini Image API Error (${response.status}): ${errorData?.error?.message || response.statusText}`);
+                }
+
+                const data = await response.json();
+
+                if (data.candidates && data.candidates[0].content && data.candidates[0].content.parts) {
+                    for (const part of data.candidates[0].content.parts) {
+                        if (part.inlineData && part.inlineData.data) {
+                            return part.inlineData.data;
+                        }
+                    }
+                }
+
+                console.warn("Gemini Image API returned a response without image data.");
+                return null;
+
+            } catch (error) {
+                console.error('Error fetching image from Gemini:', error);
+                throw error;
+            }
+        }
+
         function prepareDataForGemini() { 
             const currentGameName = games.find(g => g.id === currentGameId)?.name || 'This Game';
             let dataSummary = `${currentGameName} Game Stats:\n`;
@@ -965,16 +1017,21 @@
             if (isSpeaking && insightAudio) { insightAudio.pause(); insightAudio.currentTime = 0; isSpeaking = false; }
             toggleListenButton(false);
 
+            dom.geminiImage.style.display = 'none';
+            dom.geminiImage.src = '';
+
             const loadingMsg = isButtonPress ? 'Conjuring witticisms... 🧠' : 'Fetching initial insight... 🧠';
             dom.geminiInsightResultDiv.innerHTML = loadingMsg;
 
             const gameDataSummary = prepareDataForGemini();
-            const currentGameName = games.find(g => g.id === currentGameId)?.name || 'the game';
-            const promptForLongInsight = `
+
+            // Fetch text insight
+            const textPromise = (async () => {
+                const promptForLongInsight = `
             **Primary Directive: Your ONLY output will be 1 sentence of text. No preambles, no explanations, no apologies, nothing but the commentary itself.**
 You are a witty, observant, and slightly sarcastic game commentator with a knack for comedic timing. Your audience loves your playful jabs and insightful, humorous takes. Your commentary should sound like a friend chatting excitedly, sometimes conspiratorially, with another friend about the game.
 
-Based on the game stats below for the game "${currentGameName}", provide a funny and insightful commentary. 
+Based on the game stats below for the game "${games.find(g => g.id === currentGameId)?.name || 'the game'}", provide a funny and insightful commentary.
 CRITITAL: if the game is Rummikub, use Rummi only instead of the entire RUMMIKUB word. For other games, you can use their full name.
 
 **Your Comedic Style & Delivery (for Text Generation):**
@@ -1010,19 +1067,45 @@ CRITITAL: if the game is Rummikub, use Rummi only instead of the entire RUMMIKUB
 **Game Data:**
 ${gameDataSummary}
 `;
+                try {
+                    const insight = await fetchFromGemini(apiKey, promptForLongInsight, "gemini-2.0-flash");
+                    const finalInsightText = insight.trim();
+                    dom.geminiInsightResultDiv.textContent = finalInsightText;
+                    lastLongInsightText = finalInsightText;
+                    toggleListenButton(true, finalInsightText);
+                } catch (error) {
+                    const errorMsg = `<span style="color:red;">Spicy Error: ${utils.sanitizeHTML(error.message)}</span> <br>Maybe the AI is on a coffee break? Check API key & console.`;
+                    dom.geminiInsightResultDiv.innerHTML = errorMsg;
+                    lastLongInsightText = errorMsg;
+                    toggleListenButton(false);
+                }
+            })();
+
+            // Fetch image
+            const imagePromise = (async () => {
+                const imagePrompt = getAiImagePromptText(gameDataSummary);
+                dom.geminiImageContainer.innerHTML = '<p class="no-data">🖼️ Generating image...</p>';
+                try {
+                    const imageData = await fetchImageFromGemini(apiKey, imagePrompt);
+                    if (imageData) {
+                        dom.geminiImage.src = `data:image/png;base64,${imageData}`;
+                        dom.geminiImage.style.display = 'block';
+                        dom.geminiImageContainer.innerHTML = '';
+                        dom.geminiImageContainer.appendChild(dom.geminiImage);
+                    } else {
+                        dom.geminiImageContainer.innerHTML = '<p class="no-data">Could not generate image. The AI might be camera shy!</p>';
+                    }
+                } catch (error) {
+                    console.error("Image generation failed:", error);
+                    dom.geminiImageContainer.innerHTML = `<p class="error-message">Image generation failed: ${utils.sanitizeHTML(error.message)}</p>`;
+                }
+            })();
+
             try {
-                const insight = await fetchFromGemini(apiKey, promptForLongInsight, "gemini-2.0-flash");
-                const finalInsightText = insight.trim();
-                dom.geminiInsightResultDiv.textContent = finalInsightText;
-                lastLongInsightText = finalInsightText;
-                toggleListenButton(true, finalInsightText);
+                await Promise.all([textPromise, imagePromise]);
             } catch (error) {
-                const errorMsg = `<span style="color:red;">Spicy Error: ${utils.sanitizeHTML(error.message)}</span> <br>Maybe the AI is on a coffee break? Check API key & console.`;
-                dom.geminiInsightResultDiv.innerHTML = errorMsg;
-                lastLongInsightText = errorMsg;
-                toggleListenButton(false);
-            }
-            finally {
+                console.error("Error during parallel fetch:", error);
+            } finally {
                 dom.getGeminiInsightBtn.disabled = false;
                 dom.getGeminiInsightBtn.textContent = 'Get New Funny Insight 😂';
             }
@@ -1064,6 +1147,22 @@ CRITICAL: You can use other punch items like the ones below mixed with player st
 **FINAL, ABSOLUTE INSTRUCTION: Your entire response MUST be just ONE single line of commentary. Nothing before it, nothing after it. Just the line.**
 
 Game Data:
+${gameDataSummary}
+`;
+        }
+
+        function getAiImagePromptText(gameDataSummary) {
+            const currentGameName = games.find(g => g.id === currentGameId)?.name || 'the game';
+            return `
+A whimsical and funny cartoon-style image representing the current state of a ${currentGameName} game. The scene should be vibrant and full of personality.
+
+Key elements to include:
+- The players, represented as funny cartoon characters. You can use their names in the image.
+- A visual representation of the game's leaderboard or the players' current standings. For example, the leading player could be on a throne or a mountain top, while others are comically struggling to catch up.
+- The overall mood should be lighthearted, humorous, and slightly chaotic, reflecting the friendly but competitive nature of the game.
+- Use a style that is reminiscent of a modern comic strip or a webcomic.
+
+Game Data for context:
 ${gameDataSummary}
 `;
         }
