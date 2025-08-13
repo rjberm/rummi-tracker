@@ -685,7 +685,6 @@
                         currentTimerAiCommentaryText = "";
                         dom.timerAudio.onended = null;
                     };
-                    preloadedAiCommentaryUrl = null;
                 } else {
                     console.warn("AI commentary URL not ready, fetching now or playing fallback.");
                     await fetchAndPlayAiTimerCommentary(true);
@@ -842,7 +841,7 @@
 
             const voices = [ { name: "en-US-Chirp3-HD-Achernar", gender: "FEMALE" },
                             { name: "en-US-Chirp3-HD-algenib", gender: "MALE" },
-            { name: "en-US-Chirp3-HD-Aoede", gender: "FAMALE" }
+            { name: "en-US-Chirp3-HD-Aoede", gender: "FEMALE" }
      ];
             const selectedVoice = voices[Math.floor(Math.random() * voices.length)];
             const TTS_API_URL = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`;
@@ -854,7 +853,12 @@
                     body: JSON.stringify({
                         input: { text: textToSpeak },
                         voice: { languageCode: 'en-US', name: selectedVoice.name },
-                        audioConfig: { audioEncoding: 'MP3', speakingRate: 1.1, pitch: 0 }
+                        audioConfig: {
+                            audioEncoding: 'MP3',
+                            speakingRate: 1.1,
+                            pitch: 0,
+                            effectsProfileId: ['telephony-class-application']
+                        }
                     })
                 });
                 if (!response.ok) { const errorData = await response.json(); console.error('Google TTS API Error:', errorData); let errorMessage = `TTS API Error (${response.status}): ${errorData?.error?.message || response.statusText}.`; errorMessage += " Ensure Cloud Text-to-Speech API is enabled for your key and project."; throw new Error(errorMessage); }
@@ -891,7 +895,12 @@
                     body: JSON.stringify({
                         input: { text: textToSpeak },
                         voice: { languageCode: 'en-US', name: selectedVoice.name },
-                        audioConfig: { audioEncoding: 'MP3', speakingRate: 1.1, pitch: 0 }
+                        audioConfig: {
+                            audioEncoding: 'MP3',
+                            speakingRate: 1.1,
+                            pitch: 0,
+                            effectsProfileId: ['telephony-class-application']
+                        }
                     })
                 });
                 if (!response.ok) { const errorData = await response.json(); console.error('Google TTS API Error (Timer):', errorData); throw new Error(`TTS API Error (${response.status}): ${errorData?.error?.message || response.statusText}`); }
