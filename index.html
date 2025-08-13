@@ -1240,14 +1240,20 @@ ${gameDataSummary}
         function getAiImagePromptText(gameDataSummary) {
             const currentGameName = games.find(g => g.id === currentGameId)?.name || 'the game';
             return `
-A whimsical and funny 3D cartoon, realistic, or 3D cartoon image with a touch of realism, representing the current state of a ${currentGameName} game. The scene should be vibrant, full of personality, and have dynamic lighting to make it pop.
+Award-winning cinematic photograph visualizing the leaderboard for a game of ${currentGameName}. The scene is a powerful vertical metaphor for the players' rankings.
 
-Key elements to include:
-- The players, represented as funny, cartoon, realistic, or 3D cartoon characters. You can use their names in the image, but ensure the text is clear, readable, and well-integrated into the scene.
-- A visual representation of the game's leaderboard or the players' current standings.
-- The overall mood should be lighthearted, humorous, and slightly chaotic, reflecting the friendly but competitive nature of the game.
-- The style should be a blend of a modern animated cartoon, realistic, or 3D cartoon characters. 
-- Rosie is a girl, Mike is a guy, Jovany is a guy, and Beatriz is a girl. They're in their mid 30s.
+The player in 1st place is at the apex of the scene, depicted as [description of a triumphant winner, e.g., a monarch on a throne, a mountaineer at the summit, a CEO in a penthouse].
+
+The player in last place is at the very bottom, in a situation reflecting their lowly rank [description of a struggling loser, e.g., a jester in the dungeon, a climber tangled in ropes at the base, a person in the grimy alley below].
+
+The other players are positioned between these two extremes, their expressions and actions clearly showing their place in the hierarchy.
+
+The players are: Rosie (female, mid-30s), Mike (male, mid-30s), Jovany (male, mid-30s), and Beatriz (female, mid-30s). Their names are cleverly and subtly integrated into their surroundings (e.g., graffiti on a wall, a nameplate on a desk, embroidery on a flag).
+
+STYLE: [Choose a style, e.g., Hyper-realistic, Pixar Animation, Dark Fantasy Digital Art, Cyberpunk Noir]
+LIGHTING: [Choose lighting, e.g., Volumetric and cinematic, Vibrant and playful, Dramatic chiaroscuro]
+CAMERA: [Choose a lens/shot, e.g., Ultra-wide angle lens, shallow depth of field, dynamic low-angle shot]
+DETAILS: 4K, intricate detail, hyper-detailed, masterpiece.
 
 Game Data for context:
 ${gameDataSummary}
