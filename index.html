@@ -150,6 +150,9 @@
                     Enter your API Key above to get started...
                 </div>
             </details>
+            <div id="geminiImageContainer">
+                <img id="geminiImage" src="" alt="AI Generated Image" />
+            </div>
             <div class="gemini-buttons-flex">
                 <button id="getGeminiInsightBtn">Get New Funny Insight 😂</button>
                 <!-- The Listen button will be added here by JavaScript -->
@@ -250,6 +253,9 @@
         let isLoadingAiCommentary = false;
         let currentTimerAiCommentaryText = ""; 
         let lastLongInsightText = ""; 
+        let geminiImageCache = [];
+        window.geminiImageCache = geminiImageCache; // Expose for testing
+        const GEMINI_IMAGE_CACHE_KEY = 'rummikubTrackerGeminiImageCache';
 
         const DEFAULT_AUDIO_URL = "https://www.dropbox.com/scl/fi/540eent9p1es21f4ep2ix/trompo_1-edit.mp3?rlkey=m0hhk27s8892ow6eyogpqxm00&st=zi9nt3i9&dl=1";
         const AUDIO_PREFERENCES_COLLECTION = 'audioPreferences';
@@ -314,6 +320,8 @@
             changeApiKeyBtn: document.getElementById('changeApiKeyBtn'),
             getGeminiInsightBtn: document.getElementById('getGeminiInsightBtn'),
             geminiInsightResultDiv: document.getElementById('geminiInsightResult'),
+            geminiImageContainer: document.getElementById('geminiImageContainer'),
+            geminiImage: document.getElementById('geminiImage'),
             geminiButtonsFlexDiv: document.querySelector('.gemini-buttons-flex'),
             listenToInsightBtn: null, 
             firebaseConfigWarningDiv: document.getElementById('firebaseConfigWarning'),
@@ -443,12 +451,6 @@
             
             const defaultOption = new Option("Default Sound", "default");
             dom.audioSourceSelect.add(defaultOption);
-
-            const aiCommentatorOption = new Option("✨ AI Comedic Commentator", AI_COMMENTATOR_ID);
-            dom.audioSourceSelect.add(aiCommentatorOption);
-
-            const randomMixOption = new Option("🔀 Random Mix (Sounds + AI)", RANDOM_MIX_AUDIO_ID);
-            dom.audioSourceSelect.add(randomMixOption);
 
             audioPreferences.forEach(pref => {
                 const option = new Option(utils.sanitizeHTML(pref.name), pref.id);
@@ -677,6 +679,7 @@
                         currentTimerAiCommentaryText = "";
                         dom.timerAudio.onended = null;
                     };
+                    preloadedAiCommentaryUrl = null;
                 } else {
                     console.warn("AI commentary URL not ready, fetching now or playing fallback.");
                     await fetchAndPlayAiTimerCommentary(true);
@@ -833,7 +836,7 @@
 
             const voices = [ { name: "en-US-Chirp3-HD-Achernar", gender: "FEMALE" },
                             { name: "en-US-Chirp3-HD-algenib", gender: "MALE" },
-            { name: "en-US-Chirp3-HD-Aoede", gender: "FEMALE" }
+            { name: "en-US-Chirp3-HD-Aoede", gender: "FAMALE" }
      ];
             const selectedVoice = voices[Math.floor(Math.random() * voices.length)];
             const TTS_API_URL = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`;
@@ -930,6 +933,113 @@
             } catch (error) { console.error('Error fetching from Gemini:', error); throw error; }
         }
 
+        function saveImageCache() {
+            // If the cache is empty, just ensure it's cleared from localStorage.
+            if (geminiImageCache.length === 0) {
+                localStorage.removeItem(GEMINI_IMAGE_CACHE_KEY);
+                return;
+            }
+
+            // Create a mutable copy to attempt saving.
+            let cacheToSave = [...geminiImageCache];
+
+            // Try to save, and if it fails due to quota, reduce and retry.
+            while (cacheToSave.length > 0) {
+                try {
+                    // Attempt to save the current state of the cache copy.
+                    localStorage.setItem(GEMINI_IMAGE_CACHE_KEY, JSON.stringify(cacheToSave));
+
+                    // If successful, update the global cache to match what was saved.
+                    // This is important because the global cache might have more items than what could be saved.
+                    if (geminiImageCache.length !== cacheToSave.length) {
+                         console.log(`Successfully saved a reduced image cache of ${cacheToSave.length} items.`);
+                         geminiImageCache = cacheToSave;
+                         window.geminiImageCache = geminiImageCache; // Update exposed cache
+                    }
+                    return; // Exit the function successfully
+                } catch (e) {
+                    // Check if the error is a quota error.
+                    if (e.name === 'QuotaExceededError' || e.name === 'NS_ERROR_DOM_QUOTA_REACHED' || (e.message && e.message.toLowerCase().includes('quota'))) {
+                        console.warn(`Quota exceeded when trying to save ${cacheToSave.length} images. Removing oldest image and retrying.`);
+                        // Remove the oldest item (from the end of the array) and try again.
+                        cacheToSave.pop();
+                    } else {
+                        // If it's a different error, log it and stop.
+                        console.error("Failed to save image cache due to an unexpected error:", e);
+                        return; // Exit on other errors
+                    }
+                }
+            }
+
+            // If the loop finishes, it means we couldn't even save a single image.
+            console.warn("Could not save any images to cache. Clearing cache.");
+            localStorage.removeItem(GEMINI_IMAGE_CACHE_KEY);
+            geminiImageCache = []; // Clear the in-memory cache as well
+            window.geminiImageCache = geminiImageCache;
+        }
+
+        function loadImageCache() {
+            const cached = localStorage.getItem(GEMINI_IMAGE_CACHE_KEY);
+            if (cached) {
+                const parsedCache = JSON.parse(cached);
+                geminiImageCache.length = 0; // Clear array in place
+                geminiImageCache.push(...parsedCache); // Add new items
+                console.log(`Loaded ${geminiImageCache.length} images from cache.`);
+            }
+        }
+
+
+        async function fetchImageFromGemini(apiKey, promptText) {
+            const model = "gemini-2.0-flash-preview-image-generation";
+            const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [{ text: promptText }]
+                        }],
+                        generationConfig: {
+                            responseModalities: ["TEXT", "IMAGE"]
+                        }
+                    }),
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    console.error('Gemini Image API Error:', errorData);
+                    throw new Error(`Gemini Image API Error (${response.status}): ${errorData?.error?.message || response.statusText}`);
+                }
+
+                const data = await response.json();
+
+                if (data.candidates && data.candidates[0].content && data.candidates[0].content.parts) {
+                    for (const part of data.candidates[0].content.parts) {
+                        if (part.inlineData && part.inlineData.data) {
+                            const imageData = part.inlineData.data;
+                            geminiImageCache.unshift(imageData);
+                            if (geminiImageCache.length > 5) {
+                                geminiImageCache.pop();
+                            }
+                            saveImageCache();
+                            return imageData;
+                        }
+                    }
+                }
+
+                console.warn("Gemini Image API returned a response without image data.");
+                return null;
+
+            } catch (error) {
+                console.error('Error fetching image from Gemini:', error);
+                throw error;
+            }
+        }
+
         function prepareDataForGemini() { 
             const currentGameName = games.find(g => g.id === currentGameId)?.name || 'This Game';
             let dataSummary = `${currentGameName} Game Stats:\n`;
@@ -978,12 +1088,16 @@
             if (isSpeaking && insightAudio) { insightAudio.pause(); insightAudio.currentTime = 0; isSpeaking = false; }
             toggleListenButton(false);
 
+            dom.geminiImage.style.display = 'none';
+            dom.geminiImage.src = '';
+
             const loadingMsg = isButtonPress ? 'Conjuring witticisms... 🧠' : 'Fetching initial insight... 🧠';
             dom.geminiInsightResultDiv.innerHTML = loadingMsg;
 
             const gameDataSummary = prepareDataForGemini();
 
-            try {
+            // Fetch text insight
+            const textPromise = (async () => {
                 const promptForLongInsight = `
             **Primary Directive: Your ONLY output will be 1 sentence of text. No preambles, no explanations, no apologies, nothing but the commentary itself.**
 You are a witty, observant, and slightly sarcastic game commentator with a knack for comedic timing. Your audience loves your playful jabs and insightful, humorous takes. Your commentary should sound like a friend chatting excitedly, sometimes conspiratorially, with another friend about the game.
@@ -1024,16 +1138,53 @@ CRITITAL: if the game is Rummikub, use Rummi only instead of the entire RUMMIKUB
 **Game Data:**
 ${gameDataSummary}
 `;
-                const insight = await fetchFromGemini(apiKey, promptForLongInsight, "gemini-2.0-flash");
-                const finalInsightText = insight.trim();
-                dom.geminiInsightResultDiv.textContent = finalInsightText;
-                lastLongInsightText = finalInsightText;
-                toggleListenButton(true, finalInsightText);
+                try {
+                    const insight = await fetchFromGemini(apiKey, promptForLongInsight, "gemini-2.0-flash");
+                    const finalInsightText = insight.trim();
+                    dom.geminiInsightResultDiv.textContent = finalInsightText;
+                    lastLongInsightText = finalInsightText;
+                    toggleListenButton(true, finalInsightText);
+                } catch (error) {
+                    const errorMsg = `<span style="color:red;">Spicy Error: ${utils.sanitizeHTML(error.message)}</span> <br>Maybe the AI is on a coffee break? Check API key & console.`;
+                    dom.geminiInsightResultDiv.innerHTML = errorMsg;
+                    lastLongInsightText = errorMsg;
+                    toggleListenButton(false);
+                }
+            })();
+
+            const shouldFetchNewImage = isButtonPress || Math.random() < 0.2 || geminiImageCache.length === 0;
+
+            const imagePromise = (async () => {
+                if (shouldFetchNewImage) {
+                    const imagePrompt = getAiImagePromptText(gameDataSummary);
+                    dom.geminiImageContainer.innerHTML = '<p class="no-data">🖼️ Generating new image...</p>';
+                    try {
+                        const imageData = await fetchImageFromGemini(apiKey, imagePrompt);
+                        if (imageData) {
+                            dom.geminiImage.src = `data:image/png;base64,${imageData}`;
+                        } else {
+                           throw new Error("No image data returned from API.");
+                        }
+                    } catch (error) {
+                        console.error("Image generation failed:", error);
+                        dom.geminiImageContainer.innerHTML = `<p class="error-message">Image generation failed: ${utils.sanitizeHTML(error.message)}</p>`;
+                        dom.geminiImage.style.display = 'none';
+                        return; // Stop further execution in this block
+                    }
+                } else {
+                    console.log("Using cached image for insight section.");
+                    dom.geminiImage.src = `data:image/png;base64,${geminiImageCache[0]}`;
+                }
+
+                dom.geminiImage.style.display = 'block';
+                dom.geminiImageContainer.innerHTML = '';
+                dom.geminiImageContainer.appendChild(dom.geminiImage);
+            })();
+
+            try {
+                await Promise.all([textPromise, imagePromise]);
             } catch (error) {
-                const errorMsg = `<span style="color:red;">Spicy Error: ${utils.sanitizeHTML(error.message)}</span> <br>Maybe the AI is on a coffee break? Check API key & console.`;
-                dom.geminiInsightResultDiv.innerHTML = errorMsg;
-                lastLongInsightText = errorMsg;
-                toggleListenButton(false);
+                console.error("Error during parallel fetch:", error);
             } finally {
                 dom.getGeminiInsightBtn.disabled = false;
                 dom.getGeminiInsightBtn.textContent = 'Get New Funny Insight 😂';
@@ -1076,6 +1227,29 @@ CRITICAL: You can use other punch items like the ones below mixed with player st
 **FINAL, ABSOLUTE INSTRUCTION: Your entire response MUST be just ONE single line of commentary. Nothing before it, nothing after it. Just the line.**
 
 Game Data:
+${gameDataSummary}
+`;
+        }
+
+        function getAiImagePromptText(gameDataSummary) {
+            const currentGameName = games.find(g => g.id === currentGameId)?.name || 'the game';
+            return `
+Award-winning cinematic photograph visualizing the leaderboard for a game of ${currentGameName}. The scene is a powerful vertical metaphor for the players' rankings.
+
+The player in 1st place is at the apex of the scene, depicted as [description of a triumphant winner, e.g., a monarch on a throne, a mountaineer at the summit, a CEO in a penthouse].
+
+The player in last place is at the very bottom, in a situation reflecting their lowly rank [description of a struggling loser, e.g., a jester in the dungeon, a climber tangled in ropes at the base, a person in the grimy alley below].
+
+The other players are positioned between these two extremes, their expressions and actions clearly showing their place in the hierarchy.
+
+The players are: Rosie (female, mid-30s), Mike (male, mid-30s), Jovany (male, mid-30s), and Beatriz (female, mid-30s). Their names are cleverly and subtly integrated into their surroundings (e.g., graffiti on a wall, a nameplate on a desk, embroidery on a flag).
+
+STYLE: [Choose a style, e.g., Hyper-realistic, Pixar Animation, Dark Fantasy Digital Art, Cyberpunk Noir]
+LIGHTING: [Choose lighting, e.g., Volumetric and cinematic, Vibrant and playful, Dramatic chiaroscuro]
+CAMERA: [Choose a lens/shot, e.g., Ultra-wide angle lens, shallow depth of field, dynamic low-angle shot]
+DETAILS: 4K, intricate detail, hyper-detailed, masterpiece.
+
+Game Data for context:
 ${gameDataSummary}
 `;
         }
@@ -1242,6 +1416,7 @@ ${gameDataSummary}
             console.log("App initialization started.");
             addListenToInsightButton();
             lastLongInsightText = dom.geminiInsightResultDiv.textContent;
+            loadImageCache();
 
             try {
                 if (!firebaseConfig.apiKey || firebaseConfig.apiKey.includes("YOUR_") || firebaseConfig.apiKey.includes("Replace!") || !firebaseConfig.projectId || firebaseConfig.projectId.includes("YOUR_") || firebaseConfig.projectId.includes("Replace!")) {
