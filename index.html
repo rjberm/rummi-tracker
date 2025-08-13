@@ -95,6 +95,8 @@
         #geminiApiKeyInputGroup input[type="text"] { margin-bottom: 5px; }
         #geminiApiKeyNote { font-size:0.8em; color:#555; margin-top: 0; margin-bottom: 10px;}
         #geminiInsightResult { margin-top: 10px; padding: 12px; background-color: #ffffff; border-radius: 4px; min-height: 40px; border-left: 4px solid #ffc107; line-height: 1.5; white-space: pre-wrap; /* Ensures full text is shown and wraps */ overflow-y: auto; /* Adds scroll if content overflows a max height */ max-height: 200px; /* Example max height */ }
+        #geminiImageContainer { margin-top: 15px; text-align: center; }
+        #geminiImage { max-width: 100%; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: none; }
         .gemini-buttons-flex { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
         #changeApiKeyBtn { background-color: #6c757d; font-size: 0.9rem; padding: 8px 12px;}
         #firebaseConfigWarning, #firebaseError {
@@ -142,6 +144,9 @@
 
             <div id="geminiInsightResult">
                 Enter your API Key above to get started...
+            </div>
+            <div id="geminiImageContainer">
+                <img id="geminiImage" src="" alt="AI Generated Image" />
             </div>
             <div class="gemini-buttons-flex">
                 <button id="getGeminiInsightBtn">Get New Funny Insight 😂</button>
@@ -239,7 +244,7 @@
         let currentActiveAudioPreferenceId = "default";
         let insightAudio = null; 
         let isSpeaking = false;
-        let aiCommentaryAudio = null; 
+        let preloadedAiCommentaryUrl = null;
         let isLoadingAiCommentary = false;
         let currentTimerAiCommentaryText = ""; 
         let lastLongInsightText = ""; 
@@ -307,6 +312,8 @@
             changeApiKeyBtn: document.getElementById('changeApiKeyBtn'),
             getGeminiInsightBtn: document.getElementById('getGeminiInsightBtn'),
             geminiInsightResultDiv: document.getElementById('geminiInsightResult'),
+            geminiImageContainer: document.getElementById('geminiImageContainer'),
+            geminiImage: document.getElementById('geminiImage'),
             geminiButtonsFlexDiv: document.querySelector('.gemini-buttons-flex'),
             listenToInsightBtn: null, 
             firebaseConfigWarningDiv: document.getElementById('firebaseConfigWarning'),
@@ -645,43 +652,29 @@
 
                 if (playAI && getStoredGeminiApiKey() && firebaseInitializedSuccessfully) {
                     console.log("Random Mix: Choosing AI commentator.");
-                    isLoadingAiCommentary = true; 
-                    try {
-                        const gameDataSummary = prepareDataForGemini();
-                        const promptText = getAiTimerCommentaryPromptText(gameDataSummary);
-                        const commentaryText = await fetchFromGemini(getStoredGeminiApiKey(), promptText, "gemini-2.0-flash", { maxOutputTokens: 100 });
-
-                        if (commentaryText && commentaryText.trim() !== "") {
-                            console.log("Random Mix - AI Text:", commentaryText.trim());
-                            await synthesizeTimerCommentarySpeech(commentaryText.trim(), true); // true to play immediately
-                        } else {
-                            console.warn("Random Mix: AI returned empty text, playing random existing sound.");
-                            await playRandomExistingSound();
-                        }
-                    } catch (error) {
-                        console.error("Random Mix: Error playing AI sound, playing random existing sound.", error);
-                        await playRandomExistingSound();
-                    } finally {
-                        isLoadingAiCommentary = false;
-                    }
+                    await fetchAndPlayAiTimerCommentary(true);
                 } else {
                     console.log("Random Mix: Choosing existing sound (or AI not possible/chosen).");
                     await playRandomExistingSound();
                 }
             } else if (currentActiveAudioPreferenceId === AI_COMMENTATOR_ID) {
-                if (aiCommentaryAudio && aiCommentaryAudio.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA) {
-                    aiCommentaryAudio.play().catch(e => {
+                if (preloadedAiCommentaryUrl) {
+                    console.log("Playing preloaded AI commentary.");
+                    dom.timerAudio.src = preloadedAiCommentaryUrl;
+                    dom.timerAudio.play().catch(e => {
                         console.error("Error playing preloaded AI commentary:", e);
-                        // Fallback to default beep sound
-                        dom.timerAudio.src = DEFAULT_AUDIO_URL; 
-                        if (dom.timerAudio.src !== DEFAULT_AUDIO_URL) dom.timerAudio.load(); // Ensure it's loaded
-                        playStandardBeepSound(); 
+                        playStandardBeepSound(); // Fallback
                     });
-                    aiCommentaryAudio = null; // Consumed
-                    currentTimerAiCommentaryText = "";
+                    dom.timerAudio.onended = () => {
+                        URL.revokeObjectURL(preloadedAiCommentaryUrl);
+                        preloadedAiCommentaryUrl = null;
+                        currentTimerAiCommentaryText = "";
+                        dom.timerAudio.onended = null;
+                    };
+                    preloadedAiCommentaryUrl = null;
                 } else {
-                    console.warn("AI commentary audio not ready, fetching now or playing fallback.");
-                    await fetchAndPlayAiTimerCommentary(true); // true to indicate it's a timer end event
+                    console.warn("AI commentary URL not ready, fetching now or playing fallback.");
+                    await fetchAndPlayAiTimerCommentary(true);
                 }
             } else {
                 // For "default" or specific custom sounds
@@ -696,7 +689,7 @@
 
             if (currentActiveAudioPreferenceId === AI_COMMENTATOR_ID &&
                 timerRemainingSeconds === PRELOAD_AI_COMMENTARY_SECONDS_BEFORE_END &&
-                !isLoadingAiCommentary && !aiCommentaryAudio) {
+                !isLoadingAiCommentary && !preloadedAiCommentaryUrl) {
                 console.log("Timer tick: Preloading AI commentary...");
                 await preloadAiTimerCommentary();
             }
@@ -711,7 +704,19 @@
         };
 
         const startTimer = () => { stopTimer(); isTimerVisible = true; timerRemainingSeconds = (timerRemainingSeconds > 0 && timerRemainingSeconds <= TIMER_DURATION_SECONDS) ? timerRemainingSeconds : TIMER_DURATION_SECONDS; updateTimerDisplay(); updateTimerFill(); timerTimeoutId = setTimeout(timerTick, 1000); };
-        const stopTimer = () => { if (timerTimeoutId) { clearTimeout(timerTimeoutId); timerTimeoutId = null; } isLoadingAiCommentary = false; if (aiCommentaryAudio) { aiCommentaryAudio.pause(); aiCommentaryAudio = null;} currentTimerAiCommentaryText = ""; };
+        const stopTimer = () => {
+            if (timerTimeoutId) { clearTimeout(timerTimeoutId); timerTimeoutId = null; }
+            isLoadingAiCommentary = false;
+            if (preloadedAiCommentaryUrl) {
+                URL.revokeObjectURL(preloadedAiCommentaryUrl);
+                preloadedAiCommentaryUrl = null;
+            }
+            if (dom.timerAudio && dom.timerAudio.src && dom.timerAudio.src.startsWith('blob:')) {
+                dom.timerAudio.pause();
+                dom.timerAudio.removeAttribute('src');
+            }
+            currentTimerAiCommentaryText = "";
+        };
 
         const handleNextTimerClick = async () => {
             unlockAudioContext(); 
@@ -779,14 +784,10 @@
             dom.timerOverlay.style.display = 'none';
             dom.toggleTimerBtn.textContent = '⏱️ Timer';
             await releaseWakeLock(); 
-            if (dom.timerAudio) {
-                dom.timerAudio.pause();
-                dom.timerAudio.currentTime = 0;
-            }
-            if(aiCommentaryAudio) {
-                aiCommentaryAudio.pause();
-                aiCommentaryAudio = null;
-            }
+
+            // The explicit pause/cleanup of aiCommentaryAudio is removed from here
+            // as it's now handled within the refactored stopTimer()
+
             dom.timerFill.style.height = '100%';
             timerRemainingSeconds = TIMER_DURATION_SECONDS;
             updateTimerDisplay();
@@ -857,7 +858,7 @@
             } catch (error) { console.error('Error with TTS:', error); alert(`Could not play insight: ${error.message}`); isSpeaking = false; dom.listenToInsightBtn.innerHTML = '🔊 Listen'; dom.listenToInsightBtn.disabled = false; toggleListenButton(true, textToSpeak); }
         }
 
-        async function synthesizeTimerCommentarySpeech(textToSpeak, playImmediately = false) {
+        async function synthesizeTimerCommentarySpeech(textToSpeak) {
             const apiKey = getStoredGeminiApiKey();
             if (!apiKey) { console.error("TTS Internal: API Key missing."); return null; }
             if (!textToSpeak || textToSpeak.trim() === "") { console.error("TTS Internal: No text to speak."); return null;}
@@ -883,40 +884,14 @@
                 if (data.audioContent) {
                     const audioBytes = Uint8Array.from(atob(data.audioContent), c => c.charCodeAt(0));
                     const audioBlob = new Blob([audioBytes], { type: 'audio/mp3' });
-                    const audioUrl = URL.createObjectURL(audioBlob);
-                    const commentarySpecificAudio = new Audio(audioUrl); 
-
-                    return new Promise((resolve, reject) => {
-                        commentarySpecificAudio.oncanplaythrough = () => {
-                            if (playImmediately) {
-                                commentarySpecificAudio.play()
-                                    .then(() => {
-                                        console.log("Timer commentary play initiated.");
-                                    })
-                                    .catch(e => {
-                                        console.error("Error playing timer commentary immediately:", e);
-                                        URL.revokeObjectURL(audioUrl);
-                                        reject(e);
-                                        return; // Prevent onended from being called if play fails
-                                    });
-                                commentarySpecificAudio.onended = () => {
-                                    console.log("Timer commentary finished playing.");
-                                    URL.revokeObjectURL(audioUrl);
-                                    resolve(commentarySpecificAudio); 
-                                };
-                            } else {
-                                resolve(commentarySpecificAudio); // Resolve with preloaded audio for AI_COMMENTATOR_ID mode
-                            }
-                        };
-                        commentarySpecificAudio.onerror = (e) => {
-                            console.error("Audio object error (Timer TTS):", e);
-                            URL.revokeObjectURL(audioUrl);
-                            reject(new Error("Failed to load/play synthesized timer audio."));
-                        };
-                        commentarySpecificAudio.load(); 
-                    });
-                } else { throw new Error("No audio content received from TTS API (Timer)."); }
-            } catch (error) { console.error('Error with Timer TTS:', error); return Promise.reject(error); }
+                    return URL.createObjectURL(audioBlob);
+                } else {
+                    throw new Error("No audio content received from TTS API (Timer).");
+                }
+            } catch (error) {
+                console.error('Error with Timer TTS:', error);
+                return null;
+            }
         }
 
 
@@ -947,6 +922,51 @@
                 else if (data.promptFeedback?.blockReason) { throw new Error(`Content blocked: ${data.promptFeedback.blockReason}. ${data.promptFeedback.blockReasonMessage || ''}`); }
                 throw new Error('Could not extract response from Gemini.');
             } catch (error) { console.error('Error fetching from Gemini:', error); throw error; }
+        }
+
+        async function fetchImageFromGemini(apiKey, promptText) {
+            const model = "gemini-2.0-flash-preview-image-generation";
+            const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        contents: [{
+                            parts: [{ text: promptText }]
+                        }],
+                        generationConfig: {
+                            responseModalities: ["TEXT", "IMAGE"]
+                        }
+                    }),
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    console.error('Gemini Image API Error:', errorData);
+                    throw new Error(`Gemini Image API Error (${response.status}): ${errorData?.error?.message || response.statusText}`);
+                }
+
+                const data = await response.json();
+
+                if (data.candidates && data.candidates[0].content && data.candidates[0].content.parts) {
+                    for (const part of data.candidates[0].content.parts) {
+                        if (part.inlineData && part.inlineData.data) {
+                            return part.inlineData.data;
+                        }
+                    }
+                }
+
+                console.warn("Gemini Image API returned a response without image data.");
+                return null;
+
+            } catch (error) {
+                console.error('Error fetching image from Gemini:', error);
+                throw error;
+            }
         }
 
         function prepareDataForGemini() { 
@@ -997,16 +1017,21 @@
             if (isSpeaking && insightAudio) { insightAudio.pause(); insightAudio.currentTime = 0; isSpeaking = false; }
             toggleListenButton(false);
 
+            dom.geminiImage.style.display = 'none';
+            dom.geminiImage.src = '';
+
             const loadingMsg = isButtonPress ? 'Conjuring witticisms... 🧠' : 'Fetching initial insight... 🧠';
             dom.geminiInsightResultDiv.innerHTML = loadingMsg;
 
             const gameDataSummary = prepareDataForGemini();
-            const currentGameName = games.find(g => g.id === currentGameId)?.name || 'the game';
-            const promptForLongInsight = `
+
+            // Fetch text insight
+            const textPromise = (async () => {
+                const promptForLongInsight = `
             **Primary Directive: Your ONLY output will be 1 sentence of text. No preambles, no explanations, no apologies, nothing but the commentary itself.**
 You are a witty, observant, and slightly sarcastic game commentator with a knack for comedic timing. Your audience loves your playful jabs and insightful, humorous takes. Your commentary should sound like a friend chatting excitedly, sometimes conspiratorially, with another friend about the game.
 
-Based on the game stats below for the game "${currentGameName}", provide a funny and insightful commentary. 
+Based on the game stats below for the game "${games.find(g => g.id === currentGameId)?.name || 'the game'}", provide a funny and insightful commentary.
 CRITITAL: if the game is Rummikub, use Rummi only instead of the entire RUMMIKUB word. For other games, you can use their full name.
 
 **Your Comedic Style & Delivery (for Text Generation):**
@@ -1042,19 +1067,45 @@ CRITITAL: if the game is Rummikub, use Rummi only instead of the entire RUMMIKUB
 **Game Data:**
 ${gameDataSummary}
 `;
+                try {
+                    const insight = await fetchFromGemini(apiKey, promptForLongInsight, "gemini-2.0-flash");
+                    const finalInsightText = insight.trim();
+                    dom.geminiInsightResultDiv.textContent = finalInsightText;
+                    lastLongInsightText = finalInsightText;
+                    toggleListenButton(true, finalInsightText);
+                } catch (error) {
+                    const errorMsg = `<span style="color:red;">Spicy Error: ${utils.sanitizeHTML(error.message)}</span> <br>Maybe the AI is on a coffee break? Check API key & console.`;
+                    dom.geminiInsightResultDiv.innerHTML = errorMsg;
+                    lastLongInsightText = errorMsg;
+                    toggleListenButton(false);
+                }
+            })();
+
+            // Fetch image
+            const imagePromise = (async () => {
+                const imagePrompt = getAiImagePromptText(gameDataSummary);
+                dom.geminiImageContainer.innerHTML = '<p class="no-data">🖼️ Generating image...</p>';
+                try {
+                    const imageData = await fetchImageFromGemini(apiKey, imagePrompt);
+                    if (imageData) {
+                        dom.geminiImage.src = `data:image/png;base64,${imageData}`;
+                        dom.geminiImage.style.display = 'block';
+                        dom.geminiImageContainer.innerHTML = '';
+                        dom.geminiImageContainer.appendChild(dom.geminiImage);
+                    } else {
+                        dom.geminiImageContainer.innerHTML = '<p class="no-data">Could not generate image. The AI might be camera shy!</p>';
+                    }
+                } catch (error) {
+                    console.error("Image generation failed:", error);
+                    dom.geminiImageContainer.innerHTML = `<p class="error-message">Image generation failed: ${utils.sanitizeHTML(error.message)}</p>`;
+                }
+            })();
+
             try {
-                const insight = await fetchFromGemini(apiKey, promptForLongInsight, "gemini-2.0-flash");
-                const finalInsightText = insight.trim();
-                dom.geminiInsightResultDiv.textContent = finalInsightText;
-                lastLongInsightText = finalInsightText;
-                toggleListenButton(true, finalInsightText);
+                await Promise.all([textPromise, imagePromise]);
             } catch (error) {
-                const errorMsg = `<span style="color:red;">Spicy Error: ${utils.sanitizeHTML(error.message)}</span> <br>Maybe the AI is on a coffee break? Check API key & console.`;
-                dom.geminiInsightResultDiv.innerHTML = errorMsg;
-                lastLongInsightText = errorMsg;
-                toggleListenButton(false);
-            }
-            finally {
+                console.error("Error during parallel fetch:", error);
+            } finally {
                 dom.getGeminiInsightBtn.disabled = false;
                 dom.getGeminiInsightBtn.textContent = 'Get New Funny Insight 😂';
             }
@@ -1100,6 +1151,22 @@ ${gameDataSummary}
 `;
         }
 
+        function getAiImagePromptText(gameDataSummary) {
+            const currentGameName = games.find(g => g.id === currentGameId)?.name || 'the game';
+            return `
+A whimsical and funny cartoon-style image representing the current state of a ${currentGameName} game. The scene should be vibrant and full of personality.
+
+Key elements to include:
+- The players, represented as funny cartoon characters. You can use their names in the image.
+- A visual representation of the game's leaderboard or the players' current standings. For example, the leading player could be on a throne or a mountain top, while others are comically struggling to catch up.
+- The overall mood should be lighthearted, humorous, and slightly chaotic, reflecting the friendly but competitive nature of the game.
+- Use a style that is reminiscent of a modern comic strip or a webcomic.
+
+Game Data for context:
+${gameDataSummary}
+`;
+        }
+
         async function preloadAiTimerCommentary() {
             if (isLoadingAiCommentary || !firebaseInitializedSuccessfully) return;
             const apiKey = getStoredGeminiApiKey();
@@ -1115,16 +1182,25 @@ ${gameDataSummary}
                 if (commentaryText && commentaryText.trim() !== "") {
                     currentTimerAiCommentaryText = commentaryText.trim();
                     console.log("AI Timer Text (preload):", currentTimerAiCommentaryText);
-                    aiCommentaryAudio = await synthesizeTimerCommentarySpeech(currentTimerAiCommentaryText, false); 
-                    if(aiCommentaryAudio) console.log("AI Timer Audio preloaded.");
-                    else console.warn("AI Timer Audio preloading failed (no audio object).");
+
+                    if (preloadedAiCommentaryUrl) {
+                        URL.revokeObjectURL(preloadedAiCommentaryUrl);
+                        preloadedAiCommentaryUrl = null;
+                    }
+
+                    preloadedAiCommentaryUrl = await synthesizeTimerCommentarySpeech(currentTimerAiCommentaryText);
+                    if(preloadedAiCommentaryUrl) console.log("AI Timer Audio URL preloaded.");
+                    else console.warn("AI Timer Audio preloading failed (no URL).");
                 } else {
                     console.warn("AI Timer: Gemini returned empty text for commentary.");
                     currentTimerAiCommentaryText = "";
                 }
             } catch (error) {
                 console.error("Error preloading AI timer commentary:", error);
-                aiCommentaryAudio = null;
+                if (preloadedAiCommentaryUrl) {
+                    URL.revokeObjectURL(preloadedAiCommentaryUrl);
+                }
+                preloadedAiCommentaryUrl = null;
                 currentTimerAiCommentaryText = "";
             } finally {
                 isLoadingAiCommentary = false;
@@ -1158,9 +1234,22 @@ ${gameDataSummary}
                 const commentaryText = await fetchFromGemini(apiKey, promptText, "gemini-2.0-flash", { maxOutputTokens: 100 });
 
                 if (commentaryText && commentaryText.trim() !== "") {
-                    currentTimerAiCommentaryText = commentaryText.trim(); // Store for potential display or reuse if needed
+                    currentTimerAiCommentaryText = commentaryText.trim();
                     console.log("AI Timer Text (fetch/play):", currentTimerAiCommentaryText);
-                    await synthesizeTimerCommentarySpeech(currentTimerAiCommentaryText, true); // Play immediately
+                    const audioUrl = await synthesizeTimerCommentarySpeech(currentTimerAiCommentaryText);
+                    if (audioUrl) {
+                        if (dom.timerAudio.src && dom.timerAudio.src.startsWith('blob:')) {
+                            URL.revokeObjectURL(dom.timerAudio.src);
+                        }
+                        dom.timerAudio.src = audioUrl;
+                        dom.timerAudio.play().catch(e => console.error("Failed to play AI commentary on demand", e));
+                        dom.timerAudio.onended = () => {
+                            URL.revokeObjectURL(audioUrl);
+                            dom.timerAudio.onended = null;
+                        };
+                    } else {
+                         throw new Error("Synthesize speech returned no URL.");
+                    }
                 } else {
                     console.warn("AI Timer: Gemini returned empty text. Playing fallback if timer end.");
                     if (isTimerEndEvent) {
@@ -1178,7 +1267,6 @@ ${gameDataSummary}
                 }
             } finally {
                 isLoadingAiCommentary = false;
-                // Clear if not for preloading, or if it wasn't a preloaded AI commentator sound
                 if (!isTimerEndEvent || currentActiveAudioPreferenceId !== AI_COMMENTATOR_ID) {
                      currentTimerAiCommentaryText = ""; 
                 }
