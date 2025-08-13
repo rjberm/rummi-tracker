@@ -1240,13 +1240,14 @@ ${gameDataSummary}
         function getAiImagePromptText(gameDataSummary) {
             const currentGameName = games.find(g => g.id === currentGameId)?.name || 'the game';
             return `
-A whimsical and funny 3D cartoon-style image with a touch of realism, representing the current state of a ${currentGameName} game. The scene should be vibrant, full of personality, and have dynamic lighting to make it pop.
+A whimsical and funny 3D cartoon, realistic, or 3D cartoon image with a touch of realism, representing the current state of a ${currentGameName} game. The scene should be vibrant, full of personality, and have dynamic lighting to make it pop.
 
 Key elements to include:
 - The players, represented as funny, cartoon, realistic, or 3D cartoon characters. You can use their names in the image, but ensure the text is clear, readable, and well-integrated into the scene.
 - A visual representation of the game's leaderboard or the players' current standings.
 - The overall mood should be lighthearted, humorous, and slightly chaotic, reflecting the friendly but competitive nature of the game.
 - The style should be a blend of a modern animated cartoon, realistic, or 3D cartoon characters. 
+- Rosie is a girl, Mike is a guy, Jovany is a guy, and Beatriz is a girl. They're in their mid 30s.
 
 Game Data for context:
 ${gameDataSummary}
