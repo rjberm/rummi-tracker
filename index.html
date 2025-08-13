@@ -82,9 +82,9 @@
         .todays-summary.hidden { display: none; }
         .todays-summary span { display: inline-block; margin-right: 15px; }
         .todays-summary span:last-child { margin-right: 0; }
-        #timerOverlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: #333333; z-index: 1000; display: none; flex-direction: column; justify-content: center; align-items: center; overflow: hidden; background-size: cover; background-position: center; background-repeat: no-repeat; }
-        #timerFill { position: absolute; bottom: 0; left: 0; width: 100%; height: 100%; background-color: rgba(255, 0, 0, 0.2); transition: height 0.1s linear; z-index: 1; }
-        #timerDisplay { font-size: 10em; font-weight: bold; color: white; text-shadow: 0 0 8px rgba(0,0,0,0.7), 0 0 10px rgba(0,0,0,0.7); z-index: 2; position: relative; }
+        #timerOverlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: #4CAF50; z-index: 1000; display: none; flex-direction: column; justify-content: center; align-items: center; overflow: hidden; }
+        #timerFill { position: absolute; top: 0; left: 0; width: 100%; height: 0%; background-color: #808080; transition: height 0.1s linear; z-index: 1; }
+        #timerDisplay { font-size: 10em; font-weight: bold; color: white; text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5); z-index: 2; position: relative; }
         #hideTimerBtn { position: absolute; top: 20px; right: 20px; padding: 12px 24px; font-size: 1.2rem; background-color: rgba(255, 255, 255, 0.7); color: #333; border: 1px solid #ccc; border-radius: 5px; cursor: pointer; z-index: 2; }
         #hideTimerBtn:hover { background-color: rgba(255, 255, 255, 0.9); }
         #nextTimerBtn { margin-top: 25px; padding: 18px 40px; font-size: 1.8rem; min-width: 150px; font-weight: bold; background-color: rgba(255, 255, 255, 0.7); color: #333; border: 1px solid #ccc; border-radius: 8px; cursor: pointer; z-index: 2; transition: background-color 0.2s ease; }
@@ -570,7 +570,13 @@
         // --- Timer Functions ---
         const formatTimerTime = (totalSeconds) => { const minutes = Math.floor(totalSeconds / 60); const seconds = totalSeconds % 60; return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`; };
         const updateTimerDisplay = () => { if(dom.timerDisplay) dom.timerDisplay.textContent = formatTimerTime(timerRemainingSeconds); };
-        const updateTimerFill = () => { if(dom.timerFill) {const percentage = (timerRemainingSeconds / TIMER_DURATION_SECONDS) * 100; dom.timerFill.style.height = `${percentage}%`; }};
+        const updateTimerFill = () => {
+            if(dom.timerFill) {
+                const percentageRemaining = (timerRemainingSeconds / TIMER_DURATION_SECONDS);
+                const percentageCovered = (1 - percentageRemaining) * 100;
+                dom.timerFill.style.height = `${percentageCovered}%`;
+            }
+        };
         
         const unlockAudioContext = () => {
             // Unlock main timer audio if it's configured for a static sound
@@ -730,6 +736,7 @@
             unlockAudioContext(); 
             stopTimer(); 
             timerRemainingSeconds = TIMER_DURATION_SECONDS;
+            dom.timerFill.style.height = '0%';
             updateTimerDisplay();
             updateTimerFill();
 
@@ -776,25 +783,9 @@
         // --- END WAKE LOCK FUNCTIONS ---
 
 
-        function getTimerBackgroundImage() {
-            if (geminiImageCache.length > 0) {
-                const randomIndex = Math.floor(Math.random() * geminiImageCache.length);
-                return `data:image/png;base64,${geminiImageCache[randomIndex]}`;
-            }
-            return null;
-        }
-
         const showTimer = async () => {
             if (isTimerVisible) return;
             unlockAudioContext();
-
-            const bgImage = getTimerBackgroundImage();
-            if (bgImage) {
-                dom.timerOverlay.style.backgroundImage = `url(${bgImage})`;
-            } else {
-                dom.timerOverlay.style.backgroundImage = 'none';
-            }
-
             dom.timerOverlay.style.display = 'flex';
             dom.toggleTimerBtn.textContent = '⏱️ Hide Timer';
             await requestWakeLock(); 
@@ -812,7 +803,7 @@
             // The explicit pause/cleanup of aiCommentaryAudio is removed from here
             // as it's now handled within the refactored stopTimer()
 
-            dom.timerFill.style.height = '100%';
+            dom.timerFill.style.height = '0%';
             timerRemainingSeconds = TIMER_DURATION_SECONDS;
             updateTimerDisplay();
 
