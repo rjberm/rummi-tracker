@@ -239,7 +239,7 @@
         let currentActiveAudioPreferenceId = "default";
         let insightAudio = null; 
         let isSpeaking = false;
-        let aiCommentaryAudio = null; 
+        let preloadedAiCommentaryUrl = null;
         let isLoadingAiCommentary = false;
         let currentTimerAiCommentaryText = ""; 
         let lastLongInsightText = ""; 
@@ -645,43 +645,29 @@
 
                 if (playAI && getStoredGeminiApiKey() && firebaseInitializedSuccessfully) {
                     console.log("Random Mix: Choosing AI commentator.");
-                    isLoadingAiCommentary = true; 
-                    try {
-                        const gameDataSummary = prepareDataForGemini();
-                        const promptText = getAiTimerCommentaryPromptText(gameDataSummary);
-                        const commentaryText = await fetchFromGemini(getStoredGeminiApiKey(), promptText, "gemini-2.0-flash", { maxOutputTokens: 100 });
-
-                        if (commentaryText && commentaryText.trim() !== "") {
-                            console.log("Random Mix - AI Text:", commentaryText.trim());
-                            await synthesizeTimerCommentarySpeech(commentaryText.trim(), true); // true to play immediately
-                        } else {
-                            console.warn("Random Mix: AI returned empty text, playing random existing sound.");
-                            await playRandomExistingSound();
-                        }
-                    } catch (error) {
-                        console.error("Random Mix: Error playing AI sound, playing random existing sound.", error);
-                        await playRandomExistingSound();
-                    } finally {
-                        isLoadingAiCommentary = false;
-                    }
+                    await fetchAndPlayAiTimerCommentary(true);
                 } else {
                     console.log("Random Mix: Choosing existing sound (or AI not possible/chosen).");
                     await playRandomExistingSound();
                 }
             } else if (currentActiveAudioPreferenceId === AI_COMMENTATOR_ID) {
-                if (aiCommentaryAudio && aiCommentaryAudio.readyState >= HTMLMediaElement.HAVE_ENOUGH_DATA) {
-                    aiCommentaryAudio.play().catch(e => {
+                if (preloadedAiCommentaryUrl) {
+                    console.log("Playing preloaded AI commentary.");
+                    dom.timerAudio.src = preloadedAiCommentaryUrl;
+                    dom.timerAudio.play().catch(e => {
                         console.error("Error playing preloaded AI commentary:", e);
-                        // Fallback to default beep sound
-                        dom.timerAudio.src = DEFAULT_AUDIO_URL; 
-                        if (dom.timerAudio.src !== DEFAULT_AUDIO_URL) dom.timerAudio.load(); // Ensure it's loaded
-                        playStandardBeepSound(); 
+                        playStandardBeepSound(); // Fallback
                     });
-                    aiCommentaryAudio = null; // Consumed
-                    currentTimerAiCommentaryText = "";
+                    dom.timerAudio.onended = () => {
+                        URL.revokeObjectURL(preloadedAiCommentaryUrl);
+                        preloadedAiCommentaryUrl = null;
+                        currentTimerAiCommentaryText = "";
+                        dom.timerAudio.onended = null;
+                    };
+                    preloadedAiCommentaryUrl = null;
                 } else {
-                    console.warn("AI commentary audio not ready, fetching now or playing fallback.");
-                    await fetchAndPlayAiTimerCommentary(true); // true to indicate it's a timer end event
+                    console.warn("AI commentary URL not ready, fetching now or playing fallback.");
+                    await fetchAndPlayAiTimerCommentary(true);
                 }
             } else {
                 // For "default" or specific custom sounds
@@ -696,7 +682,7 @@
 
             if (currentActiveAudioPreferenceId === AI_COMMENTATOR_ID &&
                 timerRemainingSeconds === PRELOAD_AI_COMMENTARY_SECONDS_BEFORE_END &&
-                !isLoadingAiCommentary && !aiCommentaryAudio) {
+                !isLoadingAiCommentary && !preloadedAiCommentaryUrl) {
                 console.log("Timer tick: Preloading AI commentary...");
                 await preloadAiTimerCommentary();
             }
@@ -711,7 +697,19 @@
         };
 
         const startTimer = () => { stopTimer(); isTimerVisible = true; timerRemainingSeconds = (timerRemainingSeconds > 0 && timerRemainingSeconds <= TIMER_DURATION_SECONDS) ? timerRemainingSeconds : TIMER_DURATION_SECONDS; updateTimerDisplay(); updateTimerFill(); timerTimeoutId = setTimeout(timerTick, 1000); };
-        const stopTimer = () => { if (timerTimeoutId) { clearTimeout(timerTimeoutId); timerTimeoutId = null; } isLoadingAiCommentary = false; if (aiCommentaryAudio) { aiCommentaryAudio.pause(); aiCommentaryAudio = null;} currentTimerAiCommentaryText = ""; };
+        const stopTimer = () => {
+            if (timerTimeoutId) { clearTimeout(timerTimeoutId); timerTimeoutId = null; }
+            isLoadingAiCommentary = false;
+            if (preloadedAiCommentaryUrl) {
+                URL.revokeObjectURL(preloadedAiCommentaryUrl);
+                preloadedAiCommentaryUrl = null;
+            }
+            if (dom.timerAudio && dom.timerAudio.src && dom.timerAudio.src.startsWith('blob:')) {
+                dom.timerAudio.pause();
+                dom.timerAudio.removeAttribute('src');
+            }
+            currentTimerAiCommentaryText = "";
+        };
 
         const handleNextTimerClick = async () => {
             unlockAudioContext(); 
@@ -779,14 +777,10 @@
             dom.timerOverlay.style.display = 'none';
             dom.toggleTimerBtn.textContent = '⏱️ Timer';
             await releaseWakeLock(); 
-            if (dom.timerAudio) {
-                dom.timerAudio.pause();
-                dom.timerAudio.currentTime = 0;
-            }
-            if(aiCommentaryAudio) {
-                aiCommentaryAudio.pause();
-                aiCommentaryAudio = null;
-            }
+
+            // The explicit pause/cleanup of aiCommentaryAudio is removed from here
+            // as it's now handled within the refactored stopTimer()
+
             dom.timerFill.style.height = '100%';
             timerRemainingSeconds = TIMER_DURATION_SECONDS;
             updateTimerDisplay();
@@ -857,7 +851,7 @@
             } catch (error) { console.error('Error with TTS:', error); alert(`Could not play insight: ${error.message}`); isSpeaking = false; dom.listenToInsightBtn.innerHTML = '🔊 Listen'; dom.listenToInsightBtn.disabled = false; toggleListenButton(true, textToSpeak); }
         }
 
-        async function synthesizeTimerCommentarySpeech(textToSpeak, playImmediately = false) {
+        async function synthesizeTimerCommentarySpeech(textToSpeak) {
             const apiKey = getStoredGeminiApiKey();
             if (!apiKey) { console.error("TTS Internal: API Key missing."); return null; }
             if (!textToSpeak || textToSpeak.trim() === "") { console.error("TTS Internal: No text to speak."); return null;}
@@ -883,40 +877,14 @@
                 if (data.audioContent) {
                     const audioBytes = Uint8Array.from(atob(data.audioContent), c => c.charCodeAt(0));
                     const audioBlob = new Blob([audioBytes], { type: 'audio/mp3' });
-                    const audioUrl = URL.createObjectURL(audioBlob);
-                    const commentarySpecificAudio = new Audio(audioUrl); 
-
-                    return new Promise((resolve, reject) => {
-                        commentarySpecificAudio.oncanplaythrough = () => {
-                            if (playImmediately) {
-                                commentarySpecificAudio.play()
-                                    .then(() => {
-                                        console.log("Timer commentary play initiated.");
-                                    })
-                                    .catch(e => {
-                                        console.error("Error playing timer commentary immediately:", e);
-                                        URL.revokeObjectURL(audioUrl);
-                                        reject(e);
-                                        return; // Prevent onended from being called if play fails
-                                    });
-                                commentarySpecificAudio.onended = () => {
-                                    console.log("Timer commentary finished playing.");
-                                    URL.revokeObjectURL(audioUrl);
-                                    resolve(commentarySpecificAudio); 
-                                };
-                            } else {
-                                resolve(commentarySpecificAudio); // Resolve with preloaded audio for AI_COMMENTATOR_ID mode
-                            }
-                        };
-                        commentarySpecificAudio.onerror = (e) => {
-                            console.error("Audio object error (Timer TTS):", e);
-                            URL.revokeObjectURL(audioUrl);
-                            reject(new Error("Failed to load/play synthesized timer audio."));
-                        };
-                        commentarySpecificAudio.load(); 
-                    });
-                } else { throw new Error("No audio content received from TTS API (Timer)."); }
-            } catch (error) { console.error('Error with Timer TTS:', error); return Promise.reject(error); }
+                    return URL.createObjectURL(audioBlob);
+                } else {
+                    throw new Error("No audio content received from TTS API (Timer).");
+                }
+            } catch (error) {
+                console.error('Error with Timer TTS:', error);
+                return null;
+            }
         }
 
 
@@ -1115,16 +1083,25 @@ ${gameDataSummary}
                 if (commentaryText && commentaryText.trim() !== "") {
                     currentTimerAiCommentaryText = commentaryText.trim();
                     console.log("AI Timer Text (preload):", currentTimerAiCommentaryText);
-                    aiCommentaryAudio = await synthesizeTimerCommentarySpeech(currentTimerAiCommentaryText, false); 
-                    if(aiCommentaryAudio) console.log("AI Timer Audio preloaded.");
-                    else console.warn("AI Timer Audio preloading failed (no audio object).");
+
+                    if (preloadedAiCommentaryUrl) {
+                        URL.revokeObjectURL(preloadedAiCommentaryUrl);
+                        preloadedAiCommentaryUrl = null;
+                    }
+
+                    preloadedAiCommentaryUrl = await synthesizeTimerCommentarySpeech(currentTimerAiCommentaryText);
+                    if(preloadedAiCommentaryUrl) console.log("AI Timer Audio URL preloaded.");
+                    else console.warn("AI Timer Audio preloading failed (no URL).");
                 } else {
                     console.warn("AI Timer: Gemini returned empty text for commentary.");
                     currentTimerAiCommentaryText = "";
                 }
             } catch (error) {
                 console.error("Error preloading AI timer commentary:", error);
-                aiCommentaryAudio = null;
+                if (preloadedAiCommentaryUrl) {
+                    URL.revokeObjectURL(preloadedAiCommentaryUrl);
+                }
+                preloadedAiCommentaryUrl = null;
                 currentTimerAiCommentaryText = "";
             } finally {
                 isLoadingAiCommentary = false;
@@ -1158,9 +1135,22 @@ ${gameDataSummary}
                 const commentaryText = await fetchFromGemini(apiKey, promptText, "gemini-2.0-flash", { maxOutputTokens: 100 });
 
                 if (commentaryText && commentaryText.trim() !== "") {
-                    currentTimerAiCommentaryText = commentaryText.trim(); // Store for potential display or reuse if needed
+                    currentTimerAiCommentaryText = commentaryText.trim();
                     console.log("AI Timer Text (fetch/play):", currentTimerAiCommentaryText);
-                    await synthesizeTimerCommentarySpeech(currentTimerAiCommentaryText, true); // Play immediately
+                    const audioUrl = await synthesizeTimerCommentarySpeech(currentTimerAiCommentaryText);
+                    if (audioUrl) {
+                        if (dom.timerAudio.src && dom.timerAudio.src.startsWith('blob:')) {
+                            URL.revokeObjectURL(dom.timerAudio.src);
+                        }
+                        dom.timerAudio.src = audioUrl;
+                        dom.timerAudio.play().catch(e => console.error("Failed to play AI commentary on demand", e));
+                        dom.timerAudio.onended = () => {
+                            URL.revokeObjectURL(audioUrl);
+                            dom.timerAudio.onended = null;
+                        };
+                    } else {
+                         throw new Error("Synthesize speech returned no URL.");
+                    }
                 } else {
                     console.warn("AI Timer: Gemini returned empty text. Playing fallback if timer end.");
                     if (isTimerEndEvent) {
@@ -1178,7 +1168,6 @@ ${gameDataSummary}
                 }
             } finally {
                 isLoadingAiCommentary = false;
-                // Clear if not for preloading, or if it wasn't a preloaded AI commentator sound
                 if (!isTimerEndEvent || currentActiveAudioPreferenceId !== AI_COMMENTATOR_ID) {
                      currentTimerAiCommentaryText = ""; 
                 }
