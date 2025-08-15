@@ -88,9 +88,6 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background-color: rgba(0, 0, 0, 0.2); /* Faint dark overlay */
-            background-size: cover;
-            background-position: center;
             z-index: 1000;
             display: none;
             flex-direction: column;
@@ -105,8 +102,15 @@
             background-image: var(--timer-bg-image);
             background-size: cover;
             background-position: center;
-            opacity: 0.4; /* Opacity for the background image itself */
-            z-index: -1; /* Place it behind the overlay's content */
+            opacity: 0.4;
+            z-index: -2;
+        }
+        #timerOverlay::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0, 0, 0, 0.3);
+            z-index: -1;
         }
         #timerFill { position: absolute; top: 0; left: 0; width: 100%; height: 0%; background-color: #808080; transition: height 0.1s linear; z-index: 1; }
         #timerDisplay { font-size: 10em; font-weight: bold; color: black; text-shadow: 0 0 8px white, 0 0 10px white, 0 0 12px white; z-index: 2; position: relative; }
@@ -1107,11 +1111,13 @@
 
                 if (data.predictions && data.predictions.length > 0 && data.predictions[0].bytesBase64Encoded) {
                     const imageData = data.predictions[0].bytesBase64Encoded;
-                    geminiImageCache.unshift(imageData);
-                    if (geminiImageCache.length > 5) {
-                        geminiImageCache.pop();
-                    }
-                    saveImageCache();
+                    // This function is now used for two purposes. Let's not pollute the main image cache
+                    // when fetching for the timer background. We can decide later if we want to merge them.
+                    // geminiImageCache.unshift(imageData);
+                    // if (geminiImageCache.length > 5) {
+                    //     geminiImageCache.pop();
+                    // }
+                    // saveImageCache();
                     return imageData;
                 }
 
