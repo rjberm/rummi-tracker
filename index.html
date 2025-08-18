@@ -1227,24 +1227,99 @@ ${gameDataSummary}
         }
 
         function getAiImagePromptText(gameDataSummary) {
-            const currentGameName = games.find(g => g.id === currentGameId)?.name || 'the game';
-            return `
-Award-winning cinematic comic creator visualizing the leaderboard for a game of ${currentGameName}. The scene is a funny comical, comic style snapshot for the players' rankings.
+            const playerGenders = {
+                "Mike": "male",
+                "Jovany": "male",
+                "Rosie": "female",
+                "Beatriz": "female"
+            };
 
-The player in 1st place is at the apex of the scene, depicted as [description of a triumphant winner, e.g., a queen or king, someone conquering a mountain, etc].
+            const styles = ["Pixar animation style", "hyperrealistic", "abstract", "impressionistic painting", "surrealist", "cyberpunk", "steampunk", "minimalist line art", "vibrant cartoon", "DC Comics style", "anime", "watercolour painting", "claymation"];
+            const themes = [
+                {
+                    name: "a grand royal court",
+                    winner: "a magnificent monarch on a throne",
+                    loser: "a lowly court jester being laughed at",
+                    middle: ["a noble knight", "a cunning advisor", "a wealthy merchant"]
+                },
+                {
+                    name: "a space race to a new planet",
+                    winner: "an astronaut planting a flag on the new world",
+                    loser: "an astronaut whose ship has comically crash-landed",
+                    middle: ["an astronaut floating in orbit", "a scientist at mission control", "an alien spectator"]
+                },
+                {
+                    name: "a magical wizard duel",
+                    winner: "a powerful arch-mage casting a spectacular spell",
+                    loser: "an apprentice whose spell has backfired hilariously",
+                    middle: ["a sorcerer summoning a creature", "a witch brewing a potion", "an enchanted statue"]
+                },
+                {
+                    name: "a cooking competition",
+                    winner: "a master chef presenting a perfect dish to judges",
+                    loser: "a clumsy cook who has made a huge mess",
+                    middle: ["a focused sous-chef chopping vegetables", "a baker decorating a cake", "a food critic tasting a dish"]
+                },
+                {
+                    name: "a mountain expedition",
+                    winner: "a climber at the summit, enjoying the view",
+                    loser: "a climber tangled in their own ropes at the base",
+                    middle: ["a climber halfway up the cliff face", "a sherpa guiding the way", "a hiker resting by a fire"]
+                },
+                {
+                    name: "a pirate treasure hunt",
+                    winner: "the pirate captain opening a chest overflowing with gold",
+                    loser: "a swabber being chased by a crab",
+                    middle: ["the first mate reading a map", "a lookout in the crow's nest", "a parrot on a shoulder"]
+                }
+            ];
 
-The player in last place is at the very bottom, in a situation reflecting their lowly rank [description of a struggling loser, e.g., someone struggling to climb, a person that dropped something to the floor, a person sobbing].
+            const randomStyle = styles[Math.floor(Math.random() * styles.length)];
+            const randomTheme = themes[Math.floor(Math.random() * themes.length)];
 
-The other players are positioned between these two extremes, their expressions and actions clearly showing their place in the hierarchy.
+            const rankedPlayers = players
+                .map(p => {
+                    const name = p.name;
+                    let gender = "unknown";
+                    // Find the canonical name (e.g., "Mike" for "Mikey") to get the gender
+                    const canonicalName = Object.keys(playerGenders).find(key => name.toLowerCase().includes(key.toLowerCase()));
+                    if (canonicalName) {
+                        gender = playerGenders[canonicalName];
+                    }
+                    return {
+                        name: name,
+                        gender: gender,
+                        count: wins.filter(w => w.playerId === p.id).length
+                    };
+                })
+                .sort((a, b) => b.count - a.count);
 
-The players are: Rosie (female, mid-30s), Mike (male, mid-30s), Jovany (male, mid-30s), and Beatriz (female, mid-30s). Their names are cleverly and subtly integrated into their surroundings (e.g., graffiti on a wall, a nameplate on a desk, embroidery on a flag).
+            if (rankedPlayers.length === 0) {
+                return `A lonely, empty scene in a ${randomStyle}. The game has no players yet.`;
+            }
 
-STYLE: [Choose a style, e.g., Pixar Animation, DC Comics]]
-DETAILS: 4K, intricate detail, DC comic detail, masterpiece.
+            let prompt = `Create a masterpiece image in a ${randomStyle}. The scene is ${randomTheme.name}, visualizing the rankings of exactly ${rankedPlayers.length} players. The characters must accurately reflect their specified gender and relative rankings.\n\n`;
 
-Game Data for context:
-${gameDataSummary}
-`;
+            const winner = rankedPlayers[0];
+            prompt += `- The winner, ${winner.name} (${winner.gender}), is depicted as ${randomTheme.winner}.\n`;
+
+            if (rankedPlayers.length > 1) {
+                const loser = rankedPlayers[rankedPlayers.length - 1];
+                prompt += `- The player in last place, ${loser.name} (${loser.gender}), is depicted as ${randomTheme.loser}.\n`;
+            }
+
+            if (rankedPlayers.length > 2) {
+                const middlePlayers = rankedPlayers.slice(1, -1);
+                middlePlayers.forEach((player, index) => {
+                    const role = randomTheme.middle[index % randomTheme.middle.length];
+                    prompt += `- ${player.name} (${player.gender}) is in the middle, depicted as ${role}.\n`;
+                });
+            }
+
+            prompt += `\nThe names of the players should be subtly integrated into the scene. The overall mood is funny and comical. Intricate details, 4K resolution.`;
+
+            console.log("Generated Image Prompt:", prompt);
+            return prompt;
         }
 
         async function preloadAiTimerCommentary() {
