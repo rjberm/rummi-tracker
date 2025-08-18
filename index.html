@@ -12,6 +12,7 @@
         /* --- Basic Reset & Defaults --- */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { height: 100%; }
+        html.timer-active, body.timer-active { overflow: hidden; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; background-color: #f4f7f6; color: #333; padding-bottom: 50px; }
         .app-container { max-width: 600px; margin: 0 auto; padding: 15px; position: relative; z-index: 1; }
         h1, h2, h3 { margin-bottom: 0.8em; color: #0b4f6c; }
@@ -83,8 +84,9 @@
         .todays-summary span { display: inline-block; margin-right: 15px; }
         .todays-summary span:last-child { margin-right: 0; }
         #timerOverlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: #4CAF50; z-index: 1000; display: none; flex-direction: column; justify-content: center; align-items: center; overflow: hidden; }
-        #timerFill { position: absolute; top: 0; left: 0; width: 100%; height: 0%; background-color: #808080; transition: height 0.1s linear; z-index: 1; }
-        #timerDisplay { font-size: 10em; font-weight: bold; color: white; text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5); z-index: 2; position: relative; }
+        #timerImageContainer { position: absolute; top: 0; left: 0; width: 100%; height: 0%; overflow: hidden; z-index: 0; transition: height 0.2s linear; }
+        #timerBackgroundImage { width: 100%; height: 100%; object-fit: cover; opacity: 0.3; }
+        #timerDisplay { font-size: 10em; font-weight: bold; color: white; text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7); z-index: 2; position: relative; background-color: rgba(0, 0, 0, 0.5); border-radius: 20px; padding: 0 0.5em; }
         #hideTimerBtn { position: absolute; top: 20px; right: 20px; padding: 12px 24px; font-size: 1.2rem; background-color: rgba(255, 255, 255, 0.7); color: #333; border: 1px solid #ccc; border-radius: 5px; cursor: pointer; z-index: 2; }
         #hideTimerBtn:hover { background-color: rgba(255, 255, 255, 0.9); }
         #nextTimerBtn { margin-top: 25px; padding: 18px 40px; font-size: 1.8rem; min-width: 150px; font-weight: bold; background-color: rgba(255, 255, 255, 0.7); color: #333; border: 1px solid #ccc; border-radius: 8px; cursor: pointer; z-index: 2; transition: background-color 0.2s ease; }
@@ -112,7 +114,9 @@
 <body>
 
     <div id="timerOverlay">
-        <div id="timerFill"></div>
+        <div id="timerImageContainer">
+            <img id="timerBackgroundImage" src="" alt="Timer Background" />
+        </div>
         <div id="timerDisplay">1:00</div>
         <button id="nextTimerBtn" aria-label="Next Turn Timer">NEXT</button>
         <button id="hideTimerBtn" aria-label="Hide Timer">Hide Timer</button>
@@ -241,6 +245,8 @@
         let timerTimeoutId = null;
         const TIMER_DURATION_SECONDS = 60;
         let timerRemainingSeconds = TIMER_DURATION_SECONDS;
+        let timerRestartCount = 0;
+        const IMAGE_REGEN_THRESHOLD = 15;
         const PRELOAD_AI_COMMENTARY_SECONDS_BEFORE_END = 5;
         let isTimerVisible = false;
         let audioUnlocked = false;
@@ -299,7 +305,8 @@
             todaysSummaryDiv: document.getElementById('todaysSummary'),
             toggleTimerBtn: document.getElementById('toggleTimerBtn'),
             timerOverlay: document.getElementById('timerOverlay'),
-            timerFill: document.getElementById('timerFill'),
+            timerImageContainer: document.getElementById('timerImageContainer'),
+            timerBackgroundImage: document.getElementById('timerBackgroundImage'),
             timerDisplay: document.getElementById('timerDisplay'),
             hideTimerBtn: document.getElementById('hideTimerBtn'),
             timerAudio: document.getElementById('timerAudio'), 
@@ -567,16 +574,16 @@
         // --- Timer Functions ---
         const formatTimerTime = (totalSeconds) => { const minutes = Math.floor(totalSeconds / 60); const seconds = totalSeconds % 60; return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`; };
         const updateTimerDisplay = () => { if(dom.timerDisplay) dom.timerDisplay.textContent = formatTimerTime(timerRemainingSeconds); };
-        const updateTimerFill = () => {
-            if(dom.timerFill) {
+
+        const updateTimerReveal = () => {
+            if(dom.timerImageContainer) {
                 const percentageRemaining = (timerRemainingSeconds / TIMER_DURATION_SECONDS);
                 const percentageCovered = (1 - percentageRemaining) * 100;
-                dom.timerFill.style.height = `${percentageCovered}%`;
+                dom.timerImageContainer.style.height = `${percentageCovered}%`;
             }
         };
-        
+
         const unlockAudioContext = () => {
-            // Unlock main timer audio if it's configured for a static sound
             if (dom.timerAudio && dom.timerAudio.src && dom.timerAudio.readyState < 1 && 
                 currentActiveAudioPreferenceId !== AI_COMMENTATOR_ID && 
                 currentActiveAudioPreferenceId !== RANDOM_MIX_AUDIO_ID) {
@@ -585,18 +592,14 @@
                     playPromise.then(() => dom.timerAudio.pause()).catch(e => { if(e.name !== 'AbortError') console.warn("Main audio unlock failed", e);});
                 }
             }
-            // General audio unlock flag
             if (!audioUnlocked) {
                 console.log("Attempting to unlock audio context generally.");
-                // A more robust way could be to play a tiny silent mp3 here on first user gesture.
-                // For now, setting the flag is often enough if subsequent plays are user-initiated.
                 audioUnlocked = true; 
             }
         };
 
         const playStandardBeepSound = () => {
             if (currentActiveAudioPreferenceId === AI_COMMENTATOR_ID) {
-                // This case should ideally be handled by playTimerEndSound directly
                 console.warn("playStandardBeepSound called when AI_COMMENTATOR_ID is active. This path should not be taken for AI sound.");
                 return;
             }
@@ -604,36 +607,33 @@
                 console.error("playStandardBeepSound: dom.timerAudio.src is not set. Cannot play sound.");
                 return;
             }
-
             if (!audioUnlocked) { 
                 console.warn("Audio context not unlocked, attempting to unlock for beep."); 
                 unlockAudioContext(); 
             }
-
-            // Check readyState and play
-            if (dom.timerAudio.readyState >= 2) { // HAVE_CURRENT_DATA or more
+            if (dom.timerAudio.readyState >= 2) {
                 dom.timerAudio.currentTime = 0;
                 const playPromise = dom.timerAudio.play();
                 if (playPromise !== undefined) {
                     playPromise.catch(error => {
                         console.error("Timer audio playback failed:", error);
-                        audioUnlocked = false; // Potentially re-lock if playback fails
+                        audioUnlocked = false;
                     });
                 }
             } else {
                 console.warn(`Audio not ready (readyState: ${dom.timerAudio.readyState}). Attempting load then play.`);
-                dom.timerAudio.load(); // Try to load it
-                dom.timerAudio.oncanplaythrough = () => { // Play when ready
+                dom.timerAudio.load();
+                dom.timerAudio.oncanplaythrough = () => {
                     dom.timerAudio.currentTime = 0;
                     dom.timerAudio.play().catch(error => {
                          console.error("Timer audio playback failed after load:", error);
                          audioUnlocked = false;
                     });
-                    dom.timerAudio.oncanplaythrough = null; // Remove listener once played or failed
+                    dom.timerAudio.oncanplaythrough = null;
                 };
                 dom.timerAudio.onerror = () => {
                     console.error("Error loading audio for standard beep.");
-                     dom.timerAudio.oncanplaythrough = null; // Clean up listener
+                     dom.timerAudio.oncanplaythrough = null;
                      dom.timerAudio.onerror = null;
                 }
             }
@@ -642,22 +642,17 @@
         async function playRandomExistingSound() {
             const availableSounds = [{ id: 'default', name: 'Default Sound', url: DEFAULT_AUDIO_URL }];
             audioPreferences.forEach(pref => availableSounds.push(pref));
-
-            // availableSounds should always have at least 'default'
             const randomSound = availableSounds[Math.floor(Math.random() * availableSounds.length)];
             console.log("Random Mix: Selected existing sound:", randomSound.name, randomSound.url);
-
             if (dom.timerAudio.src !== randomSound.url) {
                 dom.timerAudio.src = randomSound.url;
                 dom.timerAudio.load(); 
             }
-            // playStandardBeepSound will handle the actual play and audio context unlocking
             playStandardBeepSound();
         }
 
         async function playTimerEndSound() {
-            unlockAudioContext(); // Ensure context is active before any sound attempt
-
+            unlockAudioContext();
             if (currentActiveAudioPreferenceId === RANDOM_MIX_AUDIO_ID) {
                 console.log("Random Mix: Choosing existing sound.");
                 await playRandomExistingSound();
@@ -667,7 +662,7 @@
                     dom.timerAudio.src = preloadedAiCommentaryUrl;
                     dom.timerAudio.play().catch(e => {
                         console.error("Error playing preloaded AI commentary:", e);
-                        playStandardBeepSound(); // Fallback
+                        playStandardBeepSound();
                     });
                     dom.timerAudio.onended = () => {
                         URL.revokeObjectURL(preloadedAiCommentaryUrl);
@@ -681,11 +676,9 @@
                     await fetchAndPlayAiTimerCommentary(true);
                 }
             } else {
-                // For "default" or specific custom sounds
                 playStandardBeepSound();
             }
         }
-
 
         const timerTick = async () => {
             if (!isTimerVisible) { stopTimer(); return; }
@@ -699,15 +692,23 @@
             }
 
             if (timerRemainingSeconds < 0) {
-                await playTimerEndSound(); // UNIFIED SOUND PLAYBACK
+                await playTimerEndSound();
                 timerRemainingSeconds = TIMER_DURATION_SECONDS;
             }
             updateTimerDisplay();
-            updateTimerFill();
+            updateTimerReveal();
             timerTimeoutId = setTimeout(timerTick, 1000);
         };
 
-        const startTimer = () => { stopTimer(); isTimerVisible = true; timerRemainingSeconds = (timerRemainingSeconds > 0 && timerRemainingSeconds <= TIMER_DURATION_SECONDS) ? timerRemainingSeconds : TIMER_DURATION_SECONDS; updateTimerDisplay(); updateTimerFill(); timerTimeoutId = setTimeout(timerTick, 1000); };
+        const startTimer = () => {
+            stopTimer();
+            isTimerVisible = true;
+            timerRemainingSeconds = (timerRemainingSeconds > 0 && timerRemainingSeconds <= TIMER_DURATION_SECONDS) ? timerRemainingSeconds : TIMER_DURATION_SECONDS;
+            updateTimerDisplay();
+            updateTimerReveal();
+            timerTimeoutId = setTimeout(timerTick, 1000);
+        };
+
         const stopTimer = () => {
             if (timerTimeoutId) { clearTimeout(timerTimeoutId); timerTimeoutId = null; }
             isLoadingAiCommentary = false;
@@ -726,22 +727,30 @@
             unlockAudioContext(); 
             stopTimer(); 
             timerRemainingSeconds = TIMER_DURATION_SECONDS;
-            dom.timerFill.style.height = '0%';
-            updateTimerDisplay();
-            updateTimerFill();
 
-            // Logic for playing sound immediately on "Next" click based on selection
+            if (dom.timerImageContainer) {
+                dom.timerImageContainer.style.height = '0%';
+            }
+            updateTimerDisplay();
+            updateTimerReveal();
+
+            timerRestartCount++;
+            if (getStoredGeminiApiKey() && firebaseInitializedSuccessfully && timerRestartCount >= IMAGE_REGEN_THRESHOLD) {
+                console.log(`Timer restarted ${timerRestartCount} times. Generating new image and insight.`);
+                await handleGetGeminiInsight(true);
+                timerRestartCount = 0;
+            }
+
             if (currentActiveAudioPreferenceId === RANDOM_MIX_AUDIO_ID) {
                 console.log("Next Click (Random Mix): Playing random sound/AI for next turn.");
-                await playTimerEndSound(); // Reuses the timer end logic for immediate play
+                await playTimerEndSound();
             } else if (currentActiveAudioPreferenceId === AI_COMMENTATOR_ID) {
                 console.log("Next Click: Fetching and playing AI commentary for next turn...");
-                await fetchAndPlayAiTimerCommentary(false); // false as it's a next click, not timer end
+                await fetchAndPlayAiTimerCommentary(false);
             } else {
-                 // For default or specific custom sound, play it after a short delay
                 setTimeout(() => playStandardBeepSound(), 50);
             }
-            startTimer(); // Restart the timer sequence
+            startTimer();
         };
 
         // --- WAKE LOCK FUNCTIONS ---
@@ -772,10 +781,21 @@
         };
         // --- END WAKE LOCK FUNCTIONS ---
 
-
         const showTimer = async () => {
             if (isTimerVisible) return;
+            document.documentElement.classList.add('timer-active');
+            document.body.classList.add('timer-active');
             unlockAudioContext();
+
+            if (dom.timerImageContainer) {
+                dom.timerImageContainer.style.height = '0%';
+            }
+            if (geminiImageCache.length > 0) {
+                dom.timerBackgroundImage.src = `data:image/png;base64,${geminiImageCache[0]}`;
+            } else {
+                dom.timerBackgroundImage.src = '';
+            }
+
             dom.timerOverlay.style.display = 'flex';
             dom.toggleTimerBtn.textContent = '⏱️ Hide Timer';
             await requestWakeLock(); 
@@ -784,16 +804,18 @@
         
         const hideTimer = async () => {
             if (!isTimerVisible) return;
+            document.documentElement.classList.remove('timer-active');
+            document.body.classList.remove('timer-active');
             isTimerVisible = false;
             stopTimer();
             dom.timerOverlay.style.display = 'none';
             dom.toggleTimerBtn.textContent = '⏱️ Timer';
             await releaseWakeLock(); 
 
-            // The explicit pause/cleanup of aiCommentaryAudio is removed from here
-            // as it's now handled within the refactored stopTimer()
+            if (dom.timerImageContainer) {
+                dom.timerImageContainer.style.height = '0%';
+            }
 
-            dom.timerFill.style.height = '0%';
             timerRemainingSeconds = TIMER_DURATION_SECONDS;
             updateTimerDisplay();
 
