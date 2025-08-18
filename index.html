@@ -84,7 +84,8 @@
         .todays-summary span { display: inline-block; margin-right: 15px; }
         .todays-summary span:last-child { margin-right: 0; }
         #timerOverlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: #111; z-index: 1000; display: none; flex-direction: column; justify-content: center; align-items: center; overflow: hidden; }
-        #timerBackgroundImage { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: 0; opacity: 0; transition: opacity 1s ease-in-out; }
+        #timerImageContainer { position: absolute; top: 0; left: 0; width: 100%; height: 0%; overflow: hidden; z-index: 0; transition: height 0.2s linear; }
+        #timerBackgroundImage { width: 100%; height: 100%; object-fit: cover; opacity: 0.3; }
         #timerDisplay { font-size: 10em; font-weight: bold; color: white; text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7); z-index: 2; position: relative; background-color: rgba(0, 0, 0, 0.5); border-radius: 20px; padding: 0 0.5em; }
         #hideTimerBtn { position: absolute; top: 20px; right: 20px; padding: 12px 24px; font-size: 1.2rem; background-color: rgba(255, 255, 255, 0.7); color: #333; border: 1px solid #ccc; border-radius: 5px; cursor: pointer; z-index: 2; }
         #hideTimerBtn:hover { background-color: rgba(255, 255, 255, 0.9); }
@@ -113,7 +114,9 @@
 <body>
 
     <div id="timerOverlay">
-        <img id="timerBackgroundImage" src="" alt="Timer Background" />
+        <div id="timerImageContainer">
+            <img id="timerBackgroundImage" src="" alt="Timer Background" />
+        </div>
         <div id="timerDisplay">1:00</div>
         <button id="nextTimerBtn" aria-label="Next Turn Timer">NEXT</button>
         <button id="hideTimerBtn" aria-label="Hide Timer">Hide Timer</button>
@@ -302,6 +305,7 @@
             todaysSummaryDiv: document.getElementById('todaysSummary'),
             toggleTimerBtn: document.getElementById('toggleTimerBtn'),
             timerOverlay: document.getElementById('timerOverlay'),
+            timerImageContainer: document.getElementById('timerImageContainer'),
             timerBackgroundImage: document.getElementById('timerBackgroundImage'),
             timerDisplay: document.getElementById('timerDisplay'),
             hideTimerBtn: document.getElementById('hideTimerBtn'),
@@ -571,16 +575,15 @@
         const formatTimerTime = (totalSeconds) => { const minutes = Math.floor(totalSeconds / 60); const seconds = totalSeconds % 60; return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`; };
         const updateTimerDisplay = () => { if(dom.timerDisplay) dom.timerDisplay.textContent = formatTimerTime(timerRemainingSeconds); };
 
-        const updateTimerImage = () => {
-            if(dom.timerBackgroundImage && dom.timerBackgroundImage.src) {
-                // Fade in to 30% opacity over the timer's duration
-                const opacity = 0.3 * (1 - (timerRemainingSeconds / TIMER_DURATION_SECONDS));
-                dom.timerBackgroundImage.style.opacity = Math.min(opacity, 0.3);
+        const updateTimerReveal = () => {
+            if(dom.timerImageContainer) {
+                const percentageRemaining = (timerRemainingSeconds / TIMER_DURATION_SECONDS);
+                const percentageCovered = (1 - percentageRemaining) * 100;
+                dom.timerImageContainer.style.height = `${percentageCovered}%`;
             }
         };
 
         const unlockAudioContext = () => {
-            // Unlock main timer audio if it's configured for a static sound
             if (dom.timerAudio && dom.timerAudio.src && dom.timerAudio.readyState < 1 && 
                 currentActiveAudioPreferenceId !== AI_COMMENTATOR_ID && 
                 currentActiveAudioPreferenceId !== RANDOM_MIX_AUDIO_ID) {
@@ -589,7 +592,6 @@
                     playPromise.then(() => dom.timerAudio.pause()).catch(e => { if(e.name !== 'AbortError') console.warn("Main audio unlock failed", e);});
                 }
             }
-            // General audio unlock flag
             if (!audioUnlocked) {
                 console.log("Attempting to unlock audio context generally.");
                 audioUnlocked = true; 
@@ -694,7 +696,7 @@
                 timerRemainingSeconds = TIMER_DURATION_SECONDS;
             }
             updateTimerDisplay();
-            updateTimerImage(); // <-- Replaced updateTimerFill
+            updateTimerReveal();
             timerTimeoutId = setTimeout(timerTick, 1000);
         };
 
@@ -703,7 +705,7 @@
             isTimerVisible = true;
             timerRemainingSeconds = (timerRemainingSeconds > 0 && timerRemainingSeconds <= TIMER_DURATION_SECONDS) ? timerRemainingSeconds : TIMER_DURATION_SECONDS;
             updateTimerDisplay();
-            updateTimerImage();
+            updateTimerReveal();
             timerTimeoutId = setTimeout(timerTick, 1000);
         };
 
@@ -726,11 +728,11 @@
             stopTimer(); 
             timerRemainingSeconds = TIMER_DURATION_SECONDS;
 
-            if (dom.timerBackgroundImage) {
-                dom.timerBackgroundImage.style.opacity = 0;
+            if (dom.timerImageContainer) {
+                dom.timerImageContainer.style.height = '0%';
             }
             updateTimerDisplay();
-            updateTimerImage();
+            updateTimerReveal();
 
             timerRestartCount++;
             if (getStoredGeminiApiKey() && firebaseInitializedSuccessfully && timerRestartCount >= IMAGE_REGEN_THRESHOLD) {
@@ -785,12 +787,14 @@
             document.body.classList.add('timer-active');
             unlockAudioContext();
 
+            if (dom.timerImageContainer) {
+                dom.timerImageContainer.style.height = '0%';
+            }
             if (geminiImageCache.length > 0) {
                 dom.timerBackgroundImage.src = `data:image/png;base64,${geminiImageCache[0]}`;
             } else {
                 dom.timerBackgroundImage.src = '';
             }
-            dom.timerBackgroundImage.style.opacity = 0;
 
             dom.timerOverlay.style.display = 'flex';
             dom.toggleTimerBtn.textContent = '⏱️ Hide Timer';
@@ -808,13 +812,8 @@
             dom.toggleTimerBtn.textContent = '⏱️ Timer';
             await releaseWakeLock(); 
 
-            if (dom.timerBackgroundImage) {
-                dom.timerBackgroundImage.style.opacity = 0;
-                setTimeout(() => {
-                    if (!isTimerVisible) { // Check again in case timer was re-opened quickly
-                        dom.timerBackgroundImage.src = '';
-                    }
-                }, 1000);
+            if (dom.timerImageContainer) {
+                dom.timerImageContainer.style.height = '0%';
             }
 
             timerRemainingSeconds = TIMER_DURATION_SECONDS;
