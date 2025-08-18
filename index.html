@@ -12,6 +12,7 @@
         /* --- Basic Reset & Defaults --- */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body { height: 100%; }
+        html.timer-active, body.timer-active { overflow: hidden; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; background-color: #f4f7f6; color: #333; padding-bottom: 50px; }
         .app-container { max-width: 600px; margin: 0 auto; padding: 15px; position: relative; z-index: 1; }
         h1, h2, h3 { margin-bottom: 0.8em; color: #0b4f6c; }
@@ -572,9 +573,9 @@
 
         const updateTimerImage = () => {
             if(dom.timerBackgroundImage && dom.timerBackgroundImage.src) {
-                // Fade in to 50% opacity over the timer's duration
-                const opacity = 0.5 * (1 - (timerRemainingSeconds / TIMER_DURATION_SECONDS));
-                dom.timerBackgroundImage.style.opacity = Math.min(opacity, 0.5);
+                // Fade in to 30% opacity over the timer's duration
+                const opacity = 0.3 * (1 - (timerRemainingSeconds / TIMER_DURATION_SECONDS));
+                dom.timerBackgroundImage.style.opacity = Math.min(opacity, 0.3);
             }
         };
 
@@ -780,6 +781,8 @@
 
         const showTimer = async () => {
             if (isTimerVisible) return;
+            document.documentElement.classList.add('timer-active');
+            document.body.classList.add('timer-active');
             unlockAudioContext();
 
             if (geminiImageCache.length > 0) {
@@ -797,6 +800,8 @@
         
         const hideTimer = async () => {
             if (!isTimerVisible) return;
+            document.documentElement.classList.remove('timer-active');
+            document.body.classList.remove('timer-active');
             isTimerVisible = false;
             stopTimer();
             dom.timerOverlay.style.display = 'none';
