@@ -109,6 +109,21 @@
         }
         #firebaseConfigWarning { background-color: #fff3cd; border: 1px solid #ffeeba; }
         #firebaseError { background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; display: none; }
+
+        /* --- Mexican Train Styles --- */
+        #mexicanTrainTracker { border-top: 1px solid #eee; margin-top: 20px; padding-top: 15px; }
+        #mtPlayerCheckboxes { margin-bottom: 15px; }
+        .mt-player-checkbox-item { display: block; margin-bottom: 8px; }
+        .mt-player-checkbox-item input { margin-right: 8px; width: auto; }
+        #mtScoresContainer { display: grid; grid-template-columns: 1fr auto auto; gap: 10px 15px; align-items: center; margin-bottom: 15px; }
+        #mtScoresContainer .mt-player-name { font-weight: bold; }
+        #mtScoresContainer .mt-player-total-score { color: #555; font-size: 0.9em; }
+        #mtScoresContainer input[type="number"] { width: 70px; padding: 8px; font-size: 1rem; text-align: center; }
+        #mtLeaderDisplay { font-weight: bold; color: #2a9d8f; margin-bottom: 15px; }
+        #mtEndGameBtn { margin-left: 10px; }
+        #mtGameOver { text-align: center; }
+        #mtGameOverTitle { color: #0b4f6c; }
+        #mtFinalScores { margin-bottom: 15px; line-height: 1.7; }
     </style>
 </head>
 <body>
@@ -202,7 +217,37 @@
             <div id="winChartContainer"> <div class="chart-title-container"> <button id="prevPeriodBtn" class="secondary small-nav-button hidden" aria-label="Previous Period">⬅️ Prev</button> <h3 id="winChartTitle">Wins This Week</h3> <button id="nextPeriodBtn" class="secondary small-nav-button hidden" aria-label="Next Period">Next ➡️</button> </div> <p id="totalPlayerWinsDisplay" class="total-wins-display text-center"></p> <div id="chart"> <canvas id="playerWinCanvas"></canvas> <p id="noChartData" class="no-data hidden">No wins recorded for this period.</p> </div> </div>
             <div id="monthlyChartContainer" class="hidden"> <div class="chart-title-container"> <button id="prevYearBtn" class="secondary small-nav-button" aria-label="Previous Year">⬅️ Prev Yr</button> <h3 id="monthlyChartTitle">Monthly Winners for 2023</h3> <button id="nextYearBtn" class="secondary small-nav-button" aria-label="Next Year">Next Yr ➡️</button> </div> <p id="totalMonthlyWinsDisplay" class="total-wins-display text-center"></p> <div id="monthlyChart"> <canvas id="monthlyWinsCanvas"></canvas> <p id="noMonthlyChartData" class="no-data hidden">No wins recorded for this year.</p> </div> </div>
         </section>
-        <section id="scoreTracking"> <h2>Record a Win</h2> <ul id="scoreTrackingList"></ul> <p id="noPlayersForScoring" class="no-data hidden">Add players to track wins.</p> </section>
+        <section id="scoreTracking">
+            <h2>Record a Win</h2>
+
+            <!-- Standard Score Tracking -->
+            <ul id="scoreTrackingList"></ul>
+            <p id="noPlayersForScoring" class="no-data hidden">Add players to track wins.</p>
+
+            <!-- Mexican Train Tracker -->
+            <div id="mexicanTrainTracker" class="hidden">
+                <div id="mtGameSetup">
+                    <p>Select players for the new game:</p>
+                    <div id="mtPlayerCheckboxes"></div>
+                    <button id="mtStartGameBtn">Start New Game</button>
+                    <p id="mtStartGameError" class="error-message"></p>
+                </div>
+                <div id="mtGameActive" class="hidden">
+                    <h3 id="mtRoundTitle"></h3>
+                    <div id="mtScoresContainer">
+                        <!-- Player scores will be injected here -->
+                    </div>
+                    <p id="mtLeaderDisplay"></p>
+                    <button id="mtSubmitRoundBtn">Submit Round Scores</button>
+                    <button id="mtEndGameBtn" class="danger">End Game Early</button>
+                </div>
+                 <div id="mtGameOver" class="hidden">
+                    <h3 id="mtGameOverTitle"></h3>
+                    <p id="mtFinalScores"></p>
+                    <button id="mtPlayAgainBtn">Play Again</button>
+                </div>
+            </div>
+        </section>
         <section id="todaysWins"> <h3>Recorded Today (<span id="todayDateDisplay"></span>)</h3> <div id="todaysSummary" class="todays-summary hidden"></div> <ul id="todaysWinsList"></ul> <p id="noWinsToday" class="no-data">No wins recorded yet today.</p> </section>
 
         <div id="firebaseConfigWarning"><strong>Firebase Setup:</strong> Initializing...</div>
@@ -235,6 +280,9 @@
         let games = []; // NEW: Stores the list of games
         const DEFAULT_GAME_ID = 'rummikub'; // NEW: Constant for the default game
         let currentGameId = DEFAULT_GAME_ID; // NEW: Tracks the current game
+        const ACTIVE_GAMES_COLLECTION = 'activeGames'; // NEW: Collection for complex games
+        let mexicanTrainState = null; // NEW: To hold the state of the current MT game
+
 
         let currentDashboardPeriod = 'month';
         let currentDisplayDate = new Date();
@@ -333,6 +381,22 @@
             firebaseConfigWarningDiv: document.getElementById('firebaseConfigWarning'),
             firebaseErrorDiv: document.getElementById('firebaseError'),
             firebaseErrorMessageSpan: document.getElementById('firebaseErrorMessage'),
+            // Mexican Train elements
+            mexicanTrainTracker: document.getElementById('mexicanTrainTracker'),
+            mtGameSetup: document.getElementById('mtGameSetup'),
+            mtPlayerCheckboxes: document.getElementById('mtPlayerCheckboxes'),
+            mtStartGameBtn: document.getElementById('mtStartGameBtn'),
+            mtStartGameError: document.getElementById('mtStartGameError'),
+            mtGameActive: document.getElementById('mtGameActive'),
+            mtRoundTitle: document.getElementById('mtRoundTitle'),
+            mtScoresContainer: document.getElementById('mtScoresContainer'),
+            mtLeaderDisplay: document.getElementById('mtLeaderDisplay'),
+            mtSubmitRoundBtn: document.getElementById('mtSubmitRoundBtn'),
+            mtEndGameBtn: document.getElementById('mtEndGameBtn'),
+            mtGameOver: document.getElementById('mtGameOver'),
+            mtGameOverTitle: document.getElementById('mtGameOverTitle'),
+            mtFinalScores: document.getElementById('mtFinalScores'),
+            mtPlayAgainBtn: document.getElementById('mtPlayAgainBtn'),
         };
 
         // --- Utility Functions ---
@@ -340,39 +404,45 @@
 
         // --- Game Management Functions (NEW) ---
         async function loadGames() {
+            const defaultGames = [
+                { id: 'rummikub', name: 'Rummikub', type: 'simple' },
+                { id: 'cover_your_assets', name: 'Cover Your Assets', type: 'simple' },
+                { id: 'mexican_train', name: 'Mexican Train', type: 'points_based_lowest_wins' }
+            ];
+
             if (!db) {
-                games = [{ id: DEFAULT_GAME_ID, name: 'Rummikub' }];
+                games = defaultGames;
                 return;
             }
+
             try {
                 const gamesCollection = collection(db, "games");
                 const gamesQuery = query(gamesCollection, orderBy("name"));
                 const snapshot = await getDocs(gamesQuery);
                 games = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-                // **THE FIX IS HERE**
-                // Check if the canonical "Rummikub" game document exists by its specific ID.
-                const rummikubGameDoc = games.find(g => g.id === DEFAULT_GAME_ID);
-                if (!rummikubGameDoc) {
-                    // It's not in the database. We will create it to ensure data integrity.
-                    console.log(`Default game with ID '${DEFAULT_GAME_ID}' not found in DB. Creating it now.`);
-                    const defaultGameData = { name: 'Rummikub' };
+                // Self-healing: Check for and create any missing default games.
+                const gamePromises = defaultGames.map(defaultGame => {
+                    const gameExists = games.some(g => g.id === defaultGame.id);
+                    if (!gameExists) {
+                        console.log(`Default game with ID '${defaultGame.id}' not found in DB. Creating it now.`);
+                        games.push(defaultGame); // Add to local list for immediate UI update
+                        const gameDocRef = doc(db, "games", defaultGame.id);
+                        // Return the promise so we can wait for it if needed, but don't block.
+                        return setDoc(gameDocRef, { ...defaultGame, createdAt: serverTimestamp() }).catch(e => {
+                            console.error(`Failed to auto-create default game '${defaultGame.id}' in Firestore:`, e);
+                        });
+                    }
+                    return Promise.resolve();
+                });
 
-                    // Add it to our local list for this session so the UI is correct immediately.
-                    games.unshift({ id: DEFAULT_GAME_ID, ...defaultGameData });
-                    games.sort((a,b) => a.name.localeCompare(b.name));
+                // Ensure local games list is sorted after potential additions
+                games.sort((a,b) => a.name.localeCompare(b.name));
 
-                    // Asynchronously save it to Firestore with the specific ID 'rummikub'.
-                    // This is a "self-healing" mechanism.
-                    const gameDocRef = doc(db, "games", DEFAULT_GAME_ID);
-                    setDoc(gameDocRef, { ...defaultGameData, createdAt: serverTimestamp() }).catch(e => {
-                        console.error("Failed to auto-create default Rummikub game in Firestore:", e);
-                    });
-                }
             } catch (error) {
                 console.error("Error loading games:", error);
-                // Fallback if DB fails
-                games = [{ id: DEFAULT_GAME_ID, name: 'Rummikub' }];
+                // Fallback to default list if DB fails
+                games = defaultGames;
             }
         }
 
@@ -440,8 +510,259 @@
                 currentGameId = selectedValue;
                 localStorage.setItem('rummikubTrackerLastGameId', currentGameId);
                 filterWinsForCurrentGame();
-                renderApp();
+
+                // Load MT state if it's the selected game
+                if (currentGameId === 'mexican_train') {
+                    await loadMexicanTrainState();
+                } else {
+                    mexicanTrainState = null; // Clear state if switching away
+                }
+
+                renderApp(); // This will now handle showing/hiding the correct tracker
                 if (getStoredGeminiApiKey()) handleGetGeminiInsight(false);
+            }
+        }
+
+        // --- Mexican Train Functions ---
+        async function loadMexicanTrainState() {
+            if (!db || currentGameId !== 'mexican_train') {
+                mexicanTrainState = null;
+                return;
+            }
+            try {
+                const gameDocRef = doc(db, ACTIVE_GAMES_COLLECTION, 'mexican_train');
+                const docSnap = await getDoc(gameDocRef);
+                if (docSnap.exists() && docSnap.data().status === 'ongoing') {
+                    mexicanTrainState = { id: docSnap.id, ...docSnap.data() };
+                    console.log("Loaded active Mexican Train game state:", mexicanTrainState);
+                } else {
+                    mexicanTrainState = null;
+                    console.log("No active Mexican Train game found in DB.");
+                }
+            } catch (error) {
+                console.error("Error loading Mexican Train state:", error);
+                mexicanTrainState = null;
+            }
+        }
+
+        function renderMexicanTrainTracker() {
+            dom.mexicanTrainTracker.classList.remove('hidden');
+
+            if (!mexicanTrainState) {
+                // Game has not started, show setup
+                dom.mtGameSetup.classList.remove('hidden');
+                dom.mtGameActive.classList.add('hidden');
+                dom.mtGameOver.classList.add('hidden');
+
+                // Populate player selection checkboxes
+                dom.mtPlayerCheckboxes.innerHTML = players.map(p => `
+                    <label class="mt-player-checkbox-item">
+                        <input type="checkbox" name="mtPlayer" value="${p.id}">
+                        ${utils.sanitizeHTML(p.name)}
+                    </label>
+                `).join('');
+                dom.mtStartGameError.textContent = '';
+            } else if (mexicanTrainState.status === 'ongoing') {
+                // Game is active
+                dom.mtGameSetup.classList.add('hidden');
+                dom.mtGameActive.classList.remove('hidden');
+                dom.mtGameOver.classList.add('hidden');
+
+                dom.mtRoundTitle.textContent = `Round: ${mexicanTrainState.currentRound}`;
+
+                const playerScoresHTML = Object.entries(mexicanTrainState.players).map(([id, data]) => {
+                    const totalScore = data.scores.reduce((acc, score) => acc + score, 0);
+                    return `
+                        <span class="mt-player-name">${utils.sanitizeHTML(data.name)}</span>
+                        <span class="mt-player-total-score">Total: ${totalScore}</span>
+                        <input type="number" class="mt-score-input" data-player-id="${id}" placeholder="Round Score" min="0">
+                    `;
+                }).join('');
+                dom.mtScoresContainer.innerHTML = playerScoresHTML;
+
+                // Update leader display
+                updateMexicanTrainLeader();
+            } else { // Game is over
+                dom.mtGameSetup.classList.add('hidden');
+                dom.mtGameActive.classList.add('hidden');
+                dom.mtGameOver.classList.remove('hidden');
+
+                const finalScores = Object.values(mexicanTrainState.players)
+                    .map(p => ({ ...p, totalScore: p.scores.reduce((a, b) => a + b, 0) }))
+                    .sort((a, b) => a.totalScore - b.totalScore);
+
+                const winner = finalScores[0];
+                dom.mtGameOverTitle.textContent = `🎉 ${utils.sanitizeHTML(winner.name)} Wins! 🎉`;
+
+                dom.mtFinalScores.innerHTML = finalScores.map((p, index) =>
+                    `<b>${index + 1}. ${utils.sanitizeHTML(p.name)}:</b> ${p.totalScore} points`
+                ).join('<br>');
+            }
+        }
+
+        function updateMexicanTrainLeader() {
+            if (!mexicanTrainState) return;
+
+            const playerTotals = Object.values(mexicanTrainState.players).map(p => {
+                const roundScores = Array.from(dom.mtScoresContainer.querySelectorAll(`.mt-score-input[data-player-id="${p.id}"]`))
+                                       .map(input => parseInt(input.value, 10) || 0);
+                const currentRoundScore = roundScores.length > 0 ? roundScores[0] : 0;
+                const previousTotal = p.scores.reduce((acc, score) => acc + score, 0);
+                return { name: p.name, total: previousTotal + currentRoundScore };
+            }).sort((a, b) => a.total - b.total);
+
+            if (playerTotals.length > 0) {
+                const leader = playerTotals[0];
+                dom.mtLeaderDisplay.textContent = `Current Leader: ${utils.sanitizeHTML(leader.name)} with ${leader.total} points`;
+            } else {
+                dom.mtLeaderDisplay.textContent = '';
+            }
+        }
+
+        async function startNewMexicanTrainGame() {
+            const selectedCheckboxes = dom.mtPlayerCheckboxes.querySelectorAll('input:checked');
+            if (selectedCheckboxes.length < 2) {
+                dom.mtStartGameError.textContent = "Please select at least 2 players.";
+                return;
+            }
+
+            dom.mtStartGameBtn.disabled = true;
+            dom.mtStartGameError.textContent = '';
+
+            const newGameState = {
+                gameId: 'mexican_train',
+                status: 'ongoing',
+                currentRound: 12,
+                players: {}
+            };
+
+            selectedCheckboxes.forEach(cb => {
+                const player = players.find(p => p.id === cb.value);
+                if (player) {
+                    newGameState.players[player.id] = {
+                        name: player.name,
+                        scores: []
+                    };
+                }
+            });
+
+            try {
+                const gameDocRef = doc(db, ACTIVE_GAMES_COLLECTION, 'mexican_train');
+                await setDoc(gameDocRef, newGameState);
+                mexicanTrainState = { id: 'mexican_train', ...newGameState };
+                renderMexicanTrainTracker();
+            } catch (error) {
+                console.error("Error starting new Mexican Train game:", error);
+                dom.mtStartGameError.textContent = `Failed to start game: ${error.message}`;
+            } finally {
+                dom.mtStartGameBtn.disabled = false;
+            }
+        }
+
+        async function submitMexicanTrainRound() {
+            const scoreInputs = dom.mtScoresContainer.querySelectorAll('.mt-score-input');
+            let allScoresValid = true;
+            const roundScores = {};
+
+            scoreInputs.forEach(input => {
+                const playerId = input.dataset.playerId;
+                const score = parseInt(input.value, 10);
+                if (isNaN(score) || score < 0) {
+                    allScoresValid = false;
+                    input.style.border = '1px solid red';
+                } else {
+                    roundScores[playerId] = score;
+                    input.style.border = '';
+                }
+            });
+
+            if (!allScoresValid) {
+                alert("Please enter a valid, non-negative score for all players.");
+                return;
+            }
+
+            dom.mtSubmitRoundBtn.disabled = true;
+
+            const updatedPlayers = { ...mexicanTrainState.players };
+            Object.keys(updatedPlayers).forEach(id => {
+                updatedPlayers[id].scores.push(roundScores[id] || 0);
+            });
+
+            const isFinalRound = mexicanTrainState.currentRound === 0;
+            const newStatus = isFinalRound ? 'completed' : 'ongoing';
+            const newRound = isFinalRound ? 0 : mexicanTrainState.currentRound - 1;
+
+            const updatedState = {
+                ...mexicanTrainState,
+                players: updatedPlayers,
+                currentRound: newRound,
+                status: newStatus
+            };
+
+            try {
+                const gameDocRef = doc(db, ACTIVE_GAMES_COLLECTION, 'mexican_train');
+                await updateDoc(gameDocRef, {
+                    players: updatedPlayers,
+                    currentRound: newRound,
+                    status: newStatus
+                });
+
+                mexicanTrainState = updatedState;
+
+                if (isFinalRound) {
+                    const finalScores = Object.entries(mexicanTrainState.players).map(([id, data]) => ({
+                        id,
+                        name: data.name,
+                        totalScore: data.scores.reduce((acc, s) => acc + s, 0)
+                    })).sort((a, b) => a.totalScore - b.totalScore);
+
+                    const winnerId = finalScores[0].id;
+                    await recordWin(winnerId); // Record the win in the main system
+                    alert(`${finalScores[0].name} wins the game!`);
+                }
+
+                renderMexicanTrainTracker();
+
+            } catch (error) {
+                console.error("Error submitting round:", error);
+                alert(`Failed to submit round: ${error.message}`);
+            } finally {
+                dom.mtSubmitRoundBtn.disabled = false;
+            }
+        }
+
+        async function endGameEarly() {
+            if (!mexicanTrainState || !confirm("Are you sure you want to end this game? The current leader will be declared the winner.")) {
+                return;
+            }
+
+            dom.mtEndGameBtn.disabled = true;
+
+            const playerTotals = Object.entries(mexicanTrainState.players).map(([id, data]) => ({
+                id,
+                name: data.name,
+                totalScore: data.scores.reduce((acc, s) => acc + s, 0)
+            })).sort((a, b) => a.totalScore - b.totalScore);
+
+            const winnerId = playerTotals[0].id;
+
+            const updatedState = {
+                ...mexicanTrainState,
+                status: 'completed'
+            };
+
+            try {
+                const gameDocRef = doc(db, ACTIVE_GAMES_COLLECTION, 'mexican_train');
+                await updateDoc(gameDocRef, { status: 'completed' });
+                await recordWin(winnerId);
+                mexicanTrainState = updatedState;
+                alert(`${playerTotals[0].name} wins the game!`);
+                renderMexicanTrainTracker();
+            } catch (error) {
+                console.error("Error ending game early:", error);
+                alert(`Failed to end game: ${error.message}`);
+            } finally {
+                dom.mtEndGameBtn.disabled = false;
             }
         }
 
@@ -563,7 +884,39 @@
 
         // --- Rendering Functions ---
         const renderPlayerManagementList = () => { dom.playerListManagementUl.innerHTML = ''; dom.noPlayersManagedMsg.classList.toggle('hidden', players.length > 0 || !firebaseInitializedSuccessfully); if (players.length === 0 && firebaseInitializedSuccessfully) return; if(!firebaseInitializedSuccessfully && dom.playerListManagementUl) { dom.playerListManagementUl.innerHTML = '<p class="no-data">Player management unavailable (database error).</p>'; return; } players.forEach(p => { const li = document.createElement('li'); li.className = 'player-management-entry'; li.dataset.playerId = p.id; const sN = utils.sanitizeHTML(p.name); li.innerHTML = ` <span class="player-name-display">${sN}</span> <div class="rename-controls hidden"> <input type="text" class="rename-input" value="${sN}" aria-label="New name for ${sN}"> <button class="save-rename-btn icon-button" aria-label="Save rename">✔️</button> <button class="cancel-rename-btn icon-button secondary" aria-label="Cancel rename">❌</button> </div> <div class="action-buttons"> <button class="rename-btn icon-button secondary" aria-label="Rename ${sN}">✏️ Rename</button> <button class="delete-player-btn icon-button danger" aria-label="Delete ${sN}">🗑️ Delete</button> </div> `; dom.playerListManagementUl.appendChild(li); }); };
-        const renderScoreTrackingList = () => { dom.scoreTrackingListUl.innerHTML = ''; dom.noPlayersForScoringMsg.classList.toggle('hidden', players.length > 0 || !firebaseInitializedSuccessfully); if (players.length === 0 && firebaseInitializedSuccessfully) { dom.noPlayersForScoringMsg.textContent = "Add players to track wins."; return; } if(!firebaseInitializedSuccessfully && dom.scoreTrackingListUl) { dom.scoreTrackingListUl.innerHTML = '<p class="no-data">Score tracking unavailable (database error).</p>'; dom.noPlayersForScoringMsg.classList.add('hidden'); return; } players.forEach(p => { const li = document.createElement('li'); li.dataset.playerId = p.id; const sN = utils.sanitizeHTML(p.name); li.innerHTML = ` <div class="player-info"> <span class="player-name">${sN}</span> </div> <button class="add-win-btn" data-player-id="${p.id}">+ Win</button> `; dom.scoreTrackingListUl.appendChild(li); }); };
+        const renderScoreTrackingList = () => {
+            const currentGame = games.find(g => g.id === currentGameId);
+            const gameType = currentGame?.type || 'simple';
+
+            // Hide all trackers initially
+            dom.scoreTrackingListUl.classList.add('hidden');
+            dom.mexicanTrainTracker.classList.add('hidden');
+            dom.noPlayersForScoringMsg.classList.add('hidden');
+
+            if (gameType === 'points_based_lowest_wins') {
+                renderMexicanTrainTracker();
+            } else { // 'simple' game type
+                dom.scoreTrackingListUl.classList.remove('hidden');
+                dom.scoreTrackingListUl.innerHTML = '';
+                dom.noPlayersForScoringMsg.classList.toggle('hidden', players.length > 0 || !firebaseInitializedSuccessfully);
+                if (players.length === 0 && firebaseInitializedSuccessfully) {
+                    dom.noPlayersForScoringMsg.textContent = "Add players to track wins.";
+                    return;
+                }
+                if (!firebaseInitializedSuccessfully && dom.scoreTrackingListUl) {
+                    dom.scoreTrackingListUl.innerHTML = '<p class="no-data">Score tracking unavailable (database error).</p>';
+                    dom.noPlayersForScoringMsg.classList.add('hidden');
+                    return;
+                }
+                players.forEach(p => {
+                    const li = document.createElement('li');
+                    li.dataset.playerId = p.id;
+                    const sN = utils.sanitizeHTML(p.name);
+                    li.innerHTML = ` <div class="player-info"> <span class="player-name">${sN}</span> </div> <button class="add-win-btn" data-player-id="${p.id}">+ Win</button> `;
+                    dom.scoreTrackingListUl.appendChild(li);
+                });
+            }
+        };
         const renderTodaysWinsList = () => { dom.todaysWinsListUl.innerHTML = ''; dom.todaysSummaryDiv.innerHTML = ''; dom.todaysSummaryDiv.classList.add('hidden'); const todayStr = utils.getTodayDateString(); dom.todayDateDisplay.textContent = todayStr; if (!firebaseInitializedSuccessfully) { dom.noWinsTodayMsg.textContent="Win list unavailable (database error)."; dom.noWinsTodayMsg.classList.remove('hidden'); return;} const todaysWins = wins.filter(w => w.timestamp?.toDate().toDateString() === todayStr); dom.noWinsTodayMsg.classList.toggle('hidden', todaysWins.length > 0); if (todaysWins.length > 0) { const winsByPlayerToday = todaysWins.reduce((acc, win) => { acc[win.playerId] = (acc[win.playerId] || 0) + 1; return acc; }, {}); const summaryItems = []; const sortedPlayerIds = Object.keys(winsByPlayerToday).sort((a, b) => { const playerA = players.find(p => p.id === a); const playerB = players.find(p => p.id === b); const nameA = playerA ? playerA.name : 'Unknown'; const nameB = playerB ? playerB.name : 'Unknown'; return nameA.localeCompare(nameB); }); sortedPlayerIds.forEach(playerId => { const count = winsByPlayerToday[playerId]; const player = players.find(p => p.id === playerId); const playerName = player ? utils.sanitizeHTML(player.name) : 'Unknown Player'; summaryItems.push(`<span>${playerName}: ${utils.pluralize(count, 'win')}</span>`); }); if (summaryItems.length > 0) { dom.todaysSummaryDiv.innerHTML = `<strong>Summary:</strong> ${summaryItems.join(' ')}`; dom.todaysSummaryDiv.classList.remove('hidden'); } todaysWins.forEach(w => { const player = players.find(pl => pl.id === w.playerId); const playerName = player ? utils.sanitizeHTML(player.name) : 'Unknown Player'; const li = document.createElement('li'); li.dataset.winId = w.id; li.innerHTML = ` <span class="player-name">${playerName}</span> <span class="win-timestamp">${utils.formatTime(w.timestamp)}</span> <button class="delete-win-btn icon-button danger" aria-label="Delete this win">🗑️</button> `; dom.todaysWinsListUl.appendChild(li); }); } };
         const renderDashboard = () => { dom.dashboardControls.querySelectorAll('button[data-period]').forEach(b => { b.classList.toggle('active', b.dataset.period === currentDashboardPeriod); }); dom.playerViewBtn.classList.toggle('active', currentView === 'player'); dom.monthlyViewBtn.classList.toggle('active', currentView === 'monthly'); dom.winChartContainer.classList.toggle('hidden', currentView !== 'player'); dom.monthlyChartContainer.classList.toggle('hidden', currentView === 'player'); if (currentView === 'player') { renderPlayerWinsChart(currentDashboardPeriod, currentDisplayDate); } else if (currentView === 'monthly') { renderMonthlyBreakdownChart(currentDisplayDate.getFullYear()); } };
         const renderPlayerWinsChart = (period, displayDate) => { if (playerWinChartInstance) { playerWinChartInstance.destroy(); playerWinChartInstance = null; } if (!firebaseInitializedSuccessfully) {dom.noChartDataMsg.textContent="Charts unavailable (database error)."; dom.noChartDataMsg.classList.remove('hidden'); dom.playerWinCanvas.classList.add('hidden'); return;} const { start, end } = utils.getPeriodRange(period, displayDate); let chartTitleText = ''; const today = new Date(); today.setHours(0,0,0,0); const currentPeriodRange = utils.getPeriodRange(period, today); const isCurrentPeriod = currentPeriodRange.start.getTime() === start.getTime(); switch (period) { case 'week': chartTitleText = isCurrentPeriod ? 'Wins This Week' : `Week of ${start.toLocaleDateString()}`; break; case 'month': const monthName = utils.getFullMonthName(displayDate.getMonth()); chartTitleText = isCurrentPeriod ? `Wins This ${monthName}` : `Wins ${monthName} ${displayDate.getFullYear()}`; break; case 'year': chartTitleText = isCurrentPeriod ? `Wins This Year (${displayDate.getFullYear()})` : `Wins ${displayDate.getFullYear()}`; break; } dom.winChartTitle.textContent = chartTitleText; dom.prevPeriodBtn.classList.remove('hidden'); dom.nextPeriodBtn.classList.remove('hidden'); const endOfToday = new Date(); endOfToday.setHours(23,59,59,999); dom.nextPeriodBtn.disabled = end.getTime() >= endOfToday.getTime(); const periodWins = getWinsForPeriodLocal(period, displayDate); const totalWinsCount = periodWins.length; dom.totalPlayerWinsDisplay.textContent = `Total Wins: ${totalWinsCount}`; dom.totalPlayerWinsDisplay.classList.remove('hidden'); const hasPlayers = players.length > 0; const hasData = totalWinsCount > 0; let playerData = []; if (hasPlayers) { const winsByPlayer = players.reduce((acc, p) => { acc[p.id] = { name: p.name, count: 0 }; return acc; }, {}); periodWins.forEach(w => { if (w.playerId && winsByPlayer[w.playerId]) { winsByPlayer[w.playerId].count++; } }); playerData = Object.values(winsByPlayer); playerData.sort((a, b) => a.name.localeCompare(b.name)); } const showChart = hasPlayers && hasData; dom.playerWinCanvas.classList.toggle('hidden', !showChart); dom.noChartDataMsg.classList.toggle('hidden', showChart); if (!hasPlayers) { dom.noChartDataMsg.textContent = "Add players to see statistics."; dom.totalPlayerWinsDisplay.classList.add('hidden'); } else if (!hasData) { dom.noChartDataMsg.textContent = "No wins recorded for this period."; } if (showChart) { const ctx = dom.playerWinCanvas.getContext('2d'); if (!ctx) return; const labels = playerData.map(p => p.name); const dataCounts = playerData.map(p => p.count); playerWinChartInstance = new Chart(ctx, { type: 'bar', data: { labels: labels, datasets: [{ label: 'Wins', data: dataCounts, backgroundColor: '#219ebc', borderColor: '#1a7f9a', borderWidth: 1 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(c) { let l = c.dataset.label || ''; if (l) { l += ': '; } if (c.parsed.y !== null) { l += c.parsed.y + (c.parsed.y === 1 ? ' win' : ' wins'); } return l; } } } } } }); } };
@@ -1499,6 +1852,21 @@ ${gameDataSummary}
             }
         });
 
+        // Mexican Train Listeners
+        dom.mtStartGameBtn.addEventListener('click', startNewMexicanTrainGame);
+        dom.mtSubmitRoundBtn.addEventListener('click', submitMexicanTrainRound);
+        dom.mtEndGameBtn.addEventListener('click', endGameEarly);
+        dom.mtPlayAgainBtn.addEventListener('click', () => {
+            mexicanTrainState = null;
+            renderMexicanTrainTracker();
+        });
+        dom.mexicanTrainTracker.addEventListener('input', (e) => {
+            if (e.target.classList.contains('mt-score-input')) {
+                updateMexicanTrainLeader();
+            }
+        });
+
+
         // --- Initialization (IIFE) ---
         (async () => {
             console.log("App initialization started.");
@@ -1544,6 +1912,10 @@ ${gameDataSummary}
                     
                     await loadGames();
                     populateGameSelector();
+
+                    if (currentGameId === 'mexican_train') {
+                        await loadMexicanTrainState();
+                    }
                     
                     await loadAudioPreferencesFromFirebase();
                     currentActiveAudioPreferenceId = await getActiveAudioPreferenceIdFromFirebase();
