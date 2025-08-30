@@ -124,6 +124,13 @@
         #mtGameOver { text-align: center; }
         #mtGameOverTitle { color: #0b4f6c; }
         #mtFinalScores { margin-bottom: 15px; line-height: 1.7; }
+        #mtCompletedRounds { margin-bottom: 20px; }
+        .mt-round-row { display: grid; grid-template-columns: 1fr auto; align-items: center; padding: 8px 0; border-bottom: 1px solid #eee; }
+        .mt-round-row-header { font-weight: bold; }
+        .mt-round-scores { display: grid; grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 5px 15px; }
+        .mt-round-scores .player-score { font-size: 0.9em; }
+        .mt-round-row .edit-round-btn { justify-self: flex-end; }
+        .mt-round-row-editing .mt-round-scores { grid-template-columns: repeat(auto-fill, minmax(70px, 1fr)); }
     </style>
 </head>
 <body>
@@ -233,13 +240,19 @@
                     <p id="mtStartGameError" class="error-message"></p>
                 </div>
                 <div id="mtGameActive" class="hidden">
-                    <h3 id="mtRoundTitle"></h3>
-                    <div id="mtScoresContainer">
-                        <!-- Player scores will be injected here -->
+                    <div id="mtCompletedRounds">
+                        <h4>Completed Rounds</h4>
+                        <!-- Completed rounds will be injected here -->
                     </div>
-                    <p id="mtLeaderDisplay"></p>
-                    <button id="mtSubmitRoundBtn">Submit Round Scores</button>
-                    <button id="mtEndGameBtn" class="danger">End Game Early</button>
+                    <div id="mtCurrentRound">
+                        <h3 id="mtRoundTitle"></h3>
+                        <div id="mtScoresContainer">
+                            <!-- Player scores will be injected here -->
+                        </div>
+                        <p id="mtLeaderDisplay"></p>
+                        <button id="mtSubmitRoundBtn">Submit Round Scores</button>
+                        <button id="mtEndGameBtn" class="danger">End Game Early</button>
+                    </div>
                 </div>
                  <div id="mtGameOver" class="hidden">
                     <h3 id="mtGameOverTitle"></h3>
@@ -417,32 +430,48 @@
 
             try {
                 const gamesCollection = collection(db, "games");
-                const gamesQuery = query(gamesCollection, orderBy("name"));
-                const snapshot = await getDocs(gamesQuery);
+                const snapshot = await getDocs(gamesCollection);
                 games = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-                // Self-healing: Check for and create any missing default games.
-                const gamePromises = defaultGames.map(defaultGame => {
-                    const gameExists = games.some(g => g.id === defaultGame.id);
-                    if (!gameExists) {
-                        console.log(`Default game with ID '${defaultGame.id}' not found in DB. Creating it now.`);
-                        games.push(defaultGame); // Add to local list for immediate UI update
-                        const gameDocRef = doc(db, "games", defaultGame.id);
-                        // Return the promise so we can wait for it if needed, but don't block.
-                        return setDoc(gameDocRef, { ...defaultGame, createdAt: serverTimestamp() }).catch(e => {
-                            console.error(`Failed to auto-create default game '${defaultGame.id}' in Firestore:`, e);
-                        });
-                    }
-                    return Promise.resolve();
-                });
+                // Self-healing and migration logic
+                for (const defaultGame of defaultGames) {
+                    const gameById = games.find(g => g.id === defaultGame.id);
+                    const gameByName = games.find(g => g.name.toLowerCase() === defaultGame.name.toLowerCase());
 
-                // Ensure local games list is sorted after potential additions
+                    if (gameById) {
+                        // Game exists with the correct ID. Ensure its type is correct.
+                        if (gameById.type !== defaultGame.type) {
+                            console.log(`Updating type for game '${defaultGame.name}'...`);
+                            const gameDocRef = doc(db, "games", gameById.id);
+                            updateDoc(gameDocRef, { type: defaultGame.type }).catch(e => console.error("Failed to update game type:", e));
+                            gameById.type = defaultGame.type; // Update local cache
+                        }
+                    } else if (gameByName) {
+                        // Game exists with the correct name but wrong/custom ID.
+                        // This is a legacy entry. We should log this but not create a duplicate.
+                        // We can also choose to "migrate" it by updating its type if missing.
+                        console.log(`Legacy game found: '${gameByName.name}'. Checking for type...`);
+                        if (gameByName.type !== defaultGame.type) {
+                             const gameDocRef = doc(db, "games", gameByName.id);
+                             updateDoc(gameDocRef, { type: defaultGame.type }).catch(e => console.error("Failed to update legacy game type:", e));
+                             gameByName.type = defaultGame.type; // Update local cache
+                        }
+                    } else {
+                        // Game does not exist by ID or name, create it.
+                        console.log(`Default game '${defaultGame.name}' not found. Creating it now.`);
+                        const gameDocRef = doc(db, "games", defaultGame.id);
+                        setDoc(gameDocRef, { ...defaultGame, createdAt: serverTimestamp() }).catch(e => {
+                            console.error(`Failed to auto-create default game '${defaultGame.id}':`, e);
+                        });
+                        games.push(defaultGame); // Add to local list immediately
+                    }
+                }
+
                 games.sort((a,b) => a.name.localeCompare(b.name));
 
             } catch (error) {
                 console.error("Error loading games:", error);
-                // Fallback to default list if DB fails
-                games = defaultGames;
+                games = defaultGames; // Fallback to default list if DB fails
             }
         }
 
@@ -553,35 +582,72 @@
                 dom.mtGameSetup.classList.remove('hidden');
                 dom.mtGameActive.classList.add('hidden');
                 dom.mtGameOver.classList.add('hidden');
-
-                // Populate player selection checkboxes
-                dom.mtPlayerCheckboxes.innerHTML = players.map(p => `
-                    <label class="mt-player-checkbox-item">
-                        <input type="checkbox" name="mtPlayer" value="${p.id}">
-                        ${utils.sanitizeHTML(p.name)}
-                    </label>
-                `).join('');
+                dom.mtPlayerCheckboxes.innerHTML = players.map(p => `<label class="mt-player-checkbox-item"><input type="checkbox" name="mtPlayer" value="${p.id}"> ${utils.sanitizeHTML(p.name)}</label>`).join('');
                 dom.mtStartGameError.textContent = '';
             } else if (mexicanTrainState.status === 'ongoing') {
-                // Game is active
                 dom.mtGameSetup.classList.add('hidden');
                 dom.mtGameActive.classList.remove('hidden');
                 dom.mtGameOver.classList.add('hidden');
 
-                dom.mtRoundTitle.textContent = `Round: ${mexicanTrainState.currentRound}`;
+                // Render completed rounds
+                const completedRoundsContainer = dom.mtGameActive.querySelector('#mtCompletedRounds');
+                const firstRound = 12;
+                const completedRoundsCount = firstRound - mexicanTrainState.currentRound;
 
-                const playerScoresHTML = Object.entries(mexicanTrainState.players).map(([id, data]) => {
+                completedRoundsContainer.innerHTML = '<h4>Completed Rounds</h4>'; // Reset
+                if (completedRoundsCount > 0) {
+                    let completedRoundsHTML = '';
+                    for (let i = 0; i < completedRoundsCount; i++) {
+                        const roundNumber = firstRound - i;
+                        const roundIndex = i;
+                        const isEditing = mexicanTrainState.editingRoundIndex === roundIndex;
+
+                        completedRoundsHTML += `<div class="mt-round-row ${isEditing ? 'mt-round-row-editing' : ''}" data-round-index="${roundIndex}">`;
+
+                        let playerScoresHTML = Object.entries(mexicanTrainState.players).map(([playerId, data]) => {
+                            const score = data.scores[roundIndex];
+                            if (isEditing) {
+                                return `<input type="number" class="mt-edit-score-input" data-player-id="${playerId}" value="${score}" min="0">`;
+                            }
+                            return `<span class="player-score"><b>${utils.sanitizeHTML(data.name)}:</b> ${score}</span>`;
+                        }).join('');
+
+                        let actionButtonsHTML = '';
+                        if (isEditing) {
+                            actionButtonsHTML = `<button class="save-round-btn small-nav-button" data-round-index="${roundIndex}">✔️ Save</button> <button class="cancel-edit-btn small-nav-button secondary" data-round-index="${roundIndex}">❌</button>`;
+                        } else {
+                            actionButtonsHTML = `<button class="edit-round-btn small-nav-button secondary" data-round-index="${roundIndex}">✏️ Edit</button>`;
+                        }
+
+                        completedRoundsHTML += `
+                            <div>
+                                <div class="mt-round-row-header">Round ${roundNumber}</div>
+                                <div class="mt-round-scores">${playerScoresHTML}</div>
+                            </div>
+                            <div>${actionButtonsHTML}</div>
+                        `;
+                        completedRoundsHTML += `</div>`;
+                    }
+                    completedRoundsContainer.innerHTML += completedRoundsHTML;
+                } else {
+                    completedRoundsContainer.innerHTML += '<p class="no-data" style="padding:0; margin-top:0;">No rounds completed yet.</p>';
+                }
+
+
+                // Render current round
+                dom.mtRoundTitle.textContent = `Current Round: ${mexicanTrainState.currentRound}`;
+                const playerInputHTML = Object.entries(mexicanTrainState.players).map(([id, data]) => {
                     const totalScore = data.scores.reduce((acc, score) => acc + score, 0);
                     return `
                         <span class="mt-player-name">${utils.sanitizeHTML(data.name)}</span>
                         <span class="mt-player-total-score">Total: ${totalScore}</span>
-                        <input type="number" class="mt-score-input" data-player-id="${id}" placeholder="Round Score" min="0">
+                        <input type="number" class="mt-score-input" data-player-id="${id}" placeholder="Score" min="0">
                     `;
                 }).join('');
-                dom.mtScoresContainer.innerHTML = playerScoresHTML;
+                dom.mtScoresContainer.innerHTML = playerInputHTML;
 
-                // Update leader display
                 updateMexicanTrainLeader();
+
             } else { // Game is over
                 dom.mtGameSetup.classList.add('hidden');
                 dom.mtGameActive.classList.add('hidden');
@@ -601,12 +667,10 @@
         }
 
         function updateMexicanTrainLeader() {
-            if (!mexicanTrainState) return;
+            if (!mexicanTrainState || mexicanTrainState.status !== 'ongoing') return;
 
             const playerTotals = Object.values(mexicanTrainState.players).map(p => {
-                const roundScores = Array.from(dom.mtScoresContainer.querySelectorAll(`.mt-score-input[data-player-id="${p.id}"]`))
-                                       .map(input => parseInt(input.value, 10) || 0);
-                const currentRoundScore = roundScores.length > 0 ? roundScores[0] : 0;
+                const currentRoundScore = parseInt(dom.mtScoresContainer.querySelector(`.mt-score-input[data-player-id="${p.id}"]`)?.value, 10) || 0;
                 const previousTotal = p.scores.reduce((acc, score) => acc + score, 0);
                 return { name: p.name, total: previousTotal + currentRoundScore };
             }).sort((a, b) => a.total - b.total);
@@ -616,6 +680,51 @@
                 dom.mtLeaderDisplay.textContent = `Current Leader: ${utils.sanitizeHTML(leader.name)} with ${leader.total} points`;
             } else {
                 dom.mtLeaderDisplay.textContent = '';
+            }
+        }
+
+        async function saveEditedMexicanTrainRound(roundIndex) {
+            const roundRow = dom.mtCompletedRounds.querySelector(`.mt-round-row[data-round-index="${roundIndex}"]`);
+            const scoreInputs = roundRow.querySelectorAll('.mt-edit-score-input');
+            let allScoresValid = true;
+            const newScores = {};
+
+            scoreInputs.forEach(input => {
+                const playerId = input.dataset.playerId;
+                const score = parseInt(input.value, 10);
+                if (isNaN(score) || score < 0) {
+                    allScoresValid = false;
+                    input.style.border = '1px solid red';
+                } else {
+                    newScores[playerId] = score;
+                    input.style.border = '';
+                }
+            });
+
+            if (!allScoresValid) {
+                alert("Please enter a valid, non-negative score for all players.");
+                return;
+            }
+
+            const button = roundRow.querySelector('.save-round-btn');
+            button.disabled = true;
+
+            const updatedPlayers = { ...mexicanTrainState.players };
+            Object.keys(updatedPlayers).forEach(id => {
+                updatedPlayers[id].scores[roundIndex] = newScores[id] || 0;
+            });
+
+            try {
+                const gameDocRef = doc(db, ACTIVE_GAMES_COLLECTION, 'mexican_train');
+                await updateDoc(gameDocRef, { players: updatedPlayers });
+
+                mexicanTrainState.players = updatedPlayers;
+                delete mexicanTrainState.editingRoundIndex; // Exit editing mode
+                renderMexicanTrainTracker();
+            } catch (error) {
+                console.error("Error saving edited round:", error);
+                alert(`Failed to save changes: ${error.message}`);
+                button.disabled = false;
             }
         }
 
@@ -1863,6 +1972,20 @@ ${gameDataSummary}
         dom.mexicanTrainTracker.addEventListener('input', (e) => {
             if (e.target.classList.contains('mt-score-input')) {
                 updateMexicanTrainLeader();
+            }
+        });
+        dom.mexicanTrainTracker.addEventListener('click', (e) => {
+            const target = e.target;
+            if (target.classList.contains('edit-round-btn')) {
+                const roundIndex = parseInt(target.dataset.roundIndex, 10);
+                mexicanTrainState.editingRoundIndex = roundIndex;
+                renderMexicanTrainTracker();
+            } else if (target.classList.contains('cancel-edit-btn')) {
+                delete mexicanTrainState.editingRoundIndex;
+                renderMexicanTrainTracker();
+            } else if (target.classList.contains('save-round-btn')) {
+                const roundIndex = parseInt(target.dataset.roundIndex, 10);
+                saveEditedMexicanTrainRound(roundIndex);
             }
         });
 
