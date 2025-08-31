@@ -312,8 +312,6 @@
         let audioUnlocked = false;
         let wakeLockSentinel = null;
         let audioPreferences = [];
-        let audioContext = null;
-        let audioBuffers = {};
         let currentActiveAudioPreferenceId = "default";
         let insightAudio = null; 
         let isSpeaking = false;
@@ -325,7 +323,7 @@
         window.geminiImageCache = geminiImageCache; // Expose for testing
         const GEMINI_IMAGE_CACHE_KEY = 'rummikubTrackerGeminiImageCache';
 
-        const DEFAULT_AUDIO_URL = "https://cdn.jsdelivr.net/gh/wle8300/beep-audio/demo/audio-files/success.mp3";
+        const DEFAULT_AUDIO_URL = "https://www.dropbox.com/scl/fi/540eent9p1es21f4ep2ix/trompo_1-edit.mp3?rlkey=m0hhk27s8892ow6eyogpqxm00&st=zi9nt3i9&dl=1";
         const AUDIO_PREFERENCES_COLLECTION = 'audioPreferences';
         const APP_CONFIG_COLLECTION = 'appConfiguration';
         const TIMER_SETTINGS_DOC_ID = 'timerSettings';
@@ -942,53 +940,44 @@
         };
 
         const applyAudioChoice = async (preferenceId) => {
-            initAudioContext();
+            let urlToLoad;
             let statusName;
-            let urlToLoad = null;
-            let bufferId = preferenceId;
 
-            if (preferenceId === "default" || !preferenceId) {
-                bufferId = "default";
+            if (preferenceId === AI_COMMENTATOR_ID) {
+                dom.timerAudio.src = "";
+                statusName = "✨ AI Comedic Commentator";
+            } else if (preferenceId === RANDOM_MIX_AUDIO_ID) {
+                dom.timerAudio.src = "";
+                statusName = "🔀 Random Mix (Sounds + AI)";
+            } else if (preferenceId === "default" || !preferenceId) {
                 urlToLoad = DEFAULT_AUDIO_URL;
                 statusName = "Default Sound";
-            } else if (preferenceId === AI_COMMENTATOR_ID || preferenceId === RANDOM_MIX_AUDIO_ID) {
-                statusName = preferenceId === AI_COMMENTATOR_ID ? "✨ AI Comedic Commentator" : "🔀 Random Mix";
+                preferenceId = "default";
             } else {
                 const pref = audioPreferences.find(p => p.id === preferenceId);
                 if (pref) {
                     urlToLoad = pref.url;
                     statusName = utils.sanitizeHTML(pref.name);
                 } else {
-                    console.warn(`Audio preference ID "${preferenceId}" not found. Reverting to default.`);
-                    bufferId = "default";
+                    console.warn(`Audio preference ID "${preferenceId}" not found during apply. Reverting to default.`);
                     urlToLoad = DEFAULT_AUDIO_URL;
                     statusName = "Default Sound";
+                    preferenceId = "default";
                 }
             }
 
-            if (urlToLoad && !audioBuffers[bufferId]) {
-                console.log(`Fetching and caching audio for: ${statusName}`);
-                try {
-                    const response = await fetch(urlToLoad);
-                    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                    const arrayBuffer = await response.arrayBuffer();
-                    const decodedBuffer = await audioContext.decodeAudioData(arrayBuffer);
-                    audioBuffers[bufferId] = decodedBuffer;
-                    console.log(`Successfully cached audio buffer for '${bufferId}'`);
-                } catch (error) {
-                    console.error(`Failed to load or decode audio for '${bufferId}':`, error);
-                    dom.audioUrlStatus.innerHTML = `<span class="error">Failed to load sound: ${statusName}</span>`;
-                    // Fallback to default if custom fails
-                    if (bufferId !== 'default' && !audioBuffers['default']) {
-                        await applyAudioChoice('default');
-                    }
-                    return; // Stop further execution for this failed choice
-                }
+            if (urlToLoad && dom.timerAudio.src !== urlToLoad) {
+                dom.timerAudio.src = urlToLoad;
+                dom.timerAudio.load();
+            } else if (urlToLoad && (!dom.timerAudio.src || dom.timerAudio.src === window.location.href)) {
+                dom.timerAudio.src = urlToLoad;
+                dom.timerAudio.load();
             }
 
             if (firebaseInitializedSuccessfully) await setActiveAudioPreferenceIdInFirebase(preferenceId);
             dom.audioUrlStatus.innerHTML = `<span class="info">Currently using: ${statusName}</span>`;
             console.log(`Audio choice applied: ${preferenceId} (${statusName})`);
+            if (isTimerVisible || audioUnlocked) { unlockAudioContext(); }
         };
 
 
@@ -1054,98 +1043,81 @@
             }
         };
 
-        const initAudioContext = () => {
-            if (!audioContext) {
-                try {
-                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-                    console.log("AudioContext initialized.");
-                } catch (e) {
-                    console.error("Web Audio API is not supported in this browser.", e);
-                }
-            }
-        };
-
         const unlockAudioContext = () => {
-            initAudioContext();
-            if (audioContext && audioContext.state === 'suspended') {
-                audioContext.resume().then(() => {
-                    console.log("AudioContext resumed successfully.");
-                    audioUnlocked = true;
-                }).catch(e => console.error("Error resuming AudioContext:", e));
-            } else if (audioContext) {
-                 audioUnlocked = true;
-            }
-
-            // This part is for the Gemini TTS audio element, to ensure it can also play.
-            if (insightAudio && insightAudio.paused) {
-                const playPromise = insightAudio.play();
+            if (dom.timerAudio && dom.timerAudio.src && dom.timerAudio.readyState < 1 &&
+                currentActiveAudioPreferenceId !== AI_COMMENTATOR_ID &&
+                currentActiveAudioPreferenceId !== RANDOM_MIX_AUDIO_ID) {
+                const playPromise = dom.timerAudio.play();
                 if (playPromise !== undefined) {
-                    playPromise.then(() => insightAudio.pause()).catch(e => {
-                        if(e.name !== 'AbortError') console.warn("Insight audio unlock failed", e);
-                    });
+                    playPromise.then(() => dom.timerAudio.pause()).catch(e => { if(e.name !== 'AbortError') console.warn("Main audio unlock failed", e);});
                 }
+            }
+            if (!audioUnlocked) {
+                console.log("Attempting to unlock audio context generally.");
+                audioUnlocked = true;
             }
         };
-
-        function playWebAudioSound(bufferId) {
-            if (!audioContext || !audioUnlocked) {
-                console.warn("AudioContext not ready, cannot play sound.");
-                return;
-            }
-            const buffer = audioBuffers[bufferId];
-            if (buffer) {
-                try {
-                    const source = audioContext.createBufferSource();
-                    source.buffer = buffer;
-                    source.connect(audioContext.destination);
-                    source.start(0);
-                } catch (e) {
-                    console.error(`Error playing sound from buffer '${bufferId}':`, e);
-                }
-            } else {
-                console.error(`Buffer for sound '${bufferId}' not found.`);
-                // As a fallback, try to play the default sound if the requested one fails
-                if (bufferId !== 'default' && audioBuffers['default']) {
-                    console.log("Playing default sound as a fallback.");
-                    playWebAudioSound('default');
-                }
-            }
-        }
 
         const playStandardBeepSound = () => {
-            if (currentActiveAudioPreferenceId === AI_COMMENTATOR_ID || currentActiveAudioPreferenceId === RANDOM_MIX_AUDIO_ID) {
-                console.warn("playStandardBeepSound called for AI/Random mode. This should be handled by playTimerEndSound.");
+            if (currentActiveAudioPreferenceId === AI_COMMENTATOR_ID) {
+                console.warn("playStandardBeepSound called when AI_COMMENTATOR_ID is active. This should be handled by playTimerEndSound.");
                 return;
             }
-            playWebAudioSound(currentActiveAudioPreferenceId);
+            if (!dom.timerAudio || !dom.timerAudio.src) {
+                console.error("playStandardBeepSound: dom.timerAudio.src is not set. Cannot play sound.");
+                return;
+            }
+            if (!audioUnlocked) {
+                unlockAudioContext();
+            }
+
+            // A Promise-based wrapper to ensure we handle the 'ended' event correctly.
+            const playPromise = dom.timerAudio.play();
+            if (playPromise !== undefined) {
+                playPromise.then(() => {
+                    // Once playback starts, listen for it to end.
+                    dom.timerAudio.onended = () => {
+                        dom.timerAudio.pause();
+                        // Setting src to empty string is a common technique to release audio focus
+                        // and resources on mobile browsers.
+                        dom.timerAudio.src = '';
+                        dom.timerAudio.load(); // Reset the audio element
+                        dom.timerAudio.onended = null; // Clean up the listener
+                        console.log("Audio playback ended and resources released.");
+                    };
+                }).catch(error => {
+                    console.error("Timer audio playback failed:", error);
+                    // If play fails, also try to clean up.
+                    dom.timerAudio.src = '';
+                    dom.timerAudio.load();
+                });
+            }
         };
         
         async function playRandomExistingSound() {
-            const availableSounds = [{ id: 'default', name: 'Default Sound' }];
-            audioPreferences.forEach(pref => availableSounds.push({ id: pref.id, name: pref.name }));
-
+            const availableSounds = [{ id: 'default', name: 'Default Sound', url: DEFAULT_AUDIO_URL }];
+            audioPreferences.forEach(pref => availableSounds.push(pref));
             const randomSound = availableSounds[Math.floor(Math.random() * availableSounds.length)];
-            console.log("Random Mix: Selected sound:", randomSound.name);
-
-            if (!audioBuffers[randomSound.id]) {
-                console.warn(`Buffer for random sound '${randomSound.id}' not loaded yet. Applying choice to load it.`);
-                await applyAudioChoice(randomSound.id);
+            console.log("Random Mix: Selected existing sound:", randomSound.name, randomSound.url);
+            if (dom.timerAudio.src !== randomSound.url) {
+                dom.timerAudio.src = randomSound.url;
+                dom.timerAudio.load();
             }
-
-            playWebAudioSound(randomSound.id);
+            playStandardBeepSound();
         }
 
         async function playTimerEndSound() {
-            unlockAudioContext(); // Ensure context is active
-
-            if (currentActiveAudioPreferenceId === AI_COMMENTATOR_ID) {
-                // AI commentary uses the <audio> element for streaming, so it's handled separately.
+            unlockAudioContext();
+            if (currentActiveAudioPreferenceId === RANDOM_MIX_AUDIO_ID) {
+                console.log("Random Mix: Choosing existing sound.");
+                await playRandomExistingSound();
+            } else if (currentActiveAudioPreferenceId === AI_COMMENTATOR_ID) {
                 if (preloadedAiCommentaryUrl) {
                     console.log("Playing preloaded AI commentary.");
                     dom.timerAudio.src = preloadedAiCommentaryUrl;
                     dom.timerAudio.play().catch(e => {
                         console.error("Error playing preloaded AI commentary:", e);
-                        playWebAudioSound('default'); // Fallback
+                        playStandardBeepSound();
                     });
                     dom.timerAudio.onended = () => {
                         URL.revokeObjectURL(preloadedAiCommentaryUrl);
@@ -1156,21 +1128,10 @@
                     preloadedAiCommentaryUrl = null;
                 } else {
                     console.warn("AI commentary URL not ready, fetching now or playing fallback.");
-                    await fetchAndPlayAiTimerCommentary(true); // This function handles its own fallback.
-                }
-            } else if (currentActiveAudioPreferenceId === RANDOM_MIX_AUDIO_ID) {
-                // Random mix can choose between a standard sound or the AI commentary.
-                const useAiCommentary = Math.random() < 0.3; // 30% chance of AI commentary
-                if (useAiCommentary && getStoredGeminiApiKey()) {
-                     console.log("Random Mix: Choosing AI commentary.");
-                     await fetchAndPlayAiTimerCommentary(true);
-                } else {
-                    console.log("Random Mix: Choosing a standard sound.");
-                    await playRandomExistingSound();
+                    await fetchAndPlayAiTimerCommentary(true);
                 }
             } else {
-                // For all other standard sounds.
-                playWebAudioSound(currentActiveAudioPreferenceId);
+                playStandardBeepSound();
             }
         }
 
