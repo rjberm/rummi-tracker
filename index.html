@@ -119,7 +119,7 @@
         #mtScoresContainer .mt-player-name { font-weight: bold; }
         #mtScoresContainer .mt-player-total-score { color: #555; font-size: 0.9em; }
         #mtScoresContainer input[type="number"] { width: 70px; padding: 8px; font-size: 1rem; text-align: center; }
-        #mtLeaderDisplay { font-weight: bold; color: #2a9d8f; margin-bottom: 15px; }
+        #mtLeaderDisplay { margin-bottom: 15px; text-align: left; line-height: 1.5; font-size: 0.9em; }
         #mtEndGameBtn { margin-left: 10px; }
         #mtGameOver { text-align: center; }
         #mtGameOverTitle { color: #0b4f6c; }
@@ -249,6 +249,7 @@
                         <div id="mtScoresContainer">
                             <!-- Player scores will be injected here -->
                         </div>
+                        <h4 style="margin-top: 15px; margin-bottom: 5px; color: #333;">Live Standings</h4>
                         <p id="mtLeaderDisplay"></p>
                         <button id="mtSubmitRoundBtn">Submit Round Scores</button>
                         <button id="mtEndGameBtn" class="danger">End Game Early</button>
@@ -674,18 +675,31 @@
         function updateMexicanTrainLeader() {
             if (!mexicanTrainState || mexicanTrainState.status !== 'ongoing') return;
 
-            const playerTotals = Object.values(mexicanTrainState.players).map(p => {
-                const currentRoundScore = parseInt(dom.mtScoresContainer.querySelector(`.mt-score-input[data-player-id="${p.id}"]`)?.value, 10) || 0;
-                const previousTotal = p.scores.reduce((acc, score) => acc + score, 0);
-                return { name: p.name, total: previousTotal + currentRoundScore };
+            const playerTotals = Object.entries(mexicanTrainState.players).map(([id, data]) => {
+                const currentRoundScore = parseInt(dom.mtScoresContainer.querySelector(`.mt-score-input[data-player-id="${id}"]`)?.value, 10) || 0;
+                const previousTotal = data.scores.reduce((acc, score) => acc + score, 0);
+                return { id: id, name: data.name, total: previousTotal + currentRoundScore };
             }).sort((a, b) => a.total - b.total);
 
-            if (playerTotals.length > 0) {
-                const leader = playerTotals[0];
-                dom.mtLeaderDisplay.textContent = `Current Leader: ${utils.sanitizeHTML(leader.name)} with ${leader.total} points`;
-            } else {
-                dom.mtLeaderDisplay.textContent = '';
-            }
+            const rankingHtml = playerTotals.map((p, index) => {
+                let diffHtml = '';
+                if (index > 0) {
+                    const diff = p.total - playerTotals[index - 1].total;
+                    diffHtml = ` <span style="font-weight:normal; color: #e76f51;">(+${diff})</span>`;
+                }
+                const rank = utils.getOrdinal(index + 1);
+                const placeStyles = [
+                    'color: #AF9500; font-weight: bold;', // Gold
+                    'color: #B4B4B4; font-weight: bold;', // Silver
+                    'color: #6A3805; font-weight: bold;', // Bronze
+                ];
+                const rankStyle = placeStyles[index] || 'font-weight: bold;';
+                const rankText = `${rank} Place`;
+
+                return `<div style="padding: 2px 0;"><span style="${rankStyle}">${rankText}:</span> <b>${utils.sanitizeHTML(p.name)}</b> - ${p.total} points${diffHtml}</div>`;
+            }).join('');
+
+            dom.mtLeaderDisplay.innerHTML = rankingHtml;
         }
 
         async function saveEditedMexicanTrainRound(roundIndex) {
