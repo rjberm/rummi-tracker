@@ -413,7 +413,7 @@
         };
 
         // --- Utility Functions ---
-        const utils = { getTodayDateString: () => new Date().toDateString(), formatTime: (timestamp) => { if (!timestamp) return ''; const date = timestamp.toDate ? timestamp.toDate() : (timestamp instanceof Date ? timestamp : null); if (!date) return ''; return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }, getMonthName: (monthIndex) => ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][monthIndex], getFullMonthName: (monthIndex) => ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][monthIndex], getPeriodRange: (period, baseDate = new Date()) => { let start = new Date(baseDate); let end = new Date(baseDate); switch (period) { case 'week': const dayOfWeek = start.getDay(); const diff = start.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); start = new Date(start.setDate(diff)); start.setHours(0, 0, 0, 0); end = new Date(start); end.setDate(start.getDate() + 6); end.setHours(23, 59, 59, 999); break; case 'month': start = new Date(start.getFullYear(), start.getMonth(), 1); start.setHours(0, 0, 0, 0); end = new Date(start.getFullYear(), start.getMonth() + 1, 0); end.setHours(23, 59, 59, 999); break; case 'year': start = new Date(start.getFullYear(), 0, 1); start.setHours(0, 0, 0, 0); end = new Date(start.getFullYear(), 11, 31); end.setHours(23, 59, 59, 999); break; } return { start, end }; }, sanitizeHTML: (str) => { const temp = document.createElement('div'); temp.textContent = str; return temp.innerHTML; }, pluralize: (count, singular, plural = null) => { plural = plural ?? singular + 's'; return count === 1 ? `${count} ${singular}` : `${count} ${plural}`; } };
+        const utils = { getTodayDateString: () => new Date().toDateString(), formatTime: (timestamp) => { if (!timestamp) return ''; const date = timestamp.toDate ? timestamp.toDate() : (timestamp instanceof Date ? timestamp : null); if (!date) return ''; return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }, getMonthName: (monthIndex) => ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][monthIndex], getFullMonthName: (monthIndex) => ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][monthIndex], getPeriodRange: (period, baseDate = new Date()) => { let start = new Date(baseDate); let end = new Date(baseDate); switch (period) { case 'week': const dayOfWeek = start.getDay(); const diff = start.getDate() - dayOfWeek + (dayOfWeek === 0 ? -6 : 1); start = new Date(start.setDate(diff)); start.setHours(0, 0, 0, 0); end = new Date(start); end.setDate(start.getDate() + 6); end.setHours(23, 59, 59, 999); break; case 'month': start = new Date(start.getFullYear(), start.getMonth(), 1); start.setHours(0, 0, 0, 0); end = new Date(start.getFullYear(), start.getMonth() + 1, 0); end.setHours(23, 59, 59, 999); break; case 'year': start = new Date(start.getFullYear(), 0, 1); start.setHours(0, 0, 0, 0); end = new Date(start.getFullYear(), 11, 31); end.setHours(23, 59, 59, 999); break; } return { start, end }; }, sanitizeHTML: (str) => { const temp = document.createElement('div'); temp.textContent = str; return temp.innerHTML; }, pluralize: (count, singular, plural = null) => { plural = plural ?? singular + 's'; return count === 1 ? `${count} ${singular}` : `${count} ${plural}`; }, getOrdinal: (i) => { const j = i % 10, k = i % 100; if (j === 1 && k !== 11) return `${i}st`; if (j === 2 && k !== 12) return `${i}nd`; if (j === 3 && k !== 13) return `${i}rd`; return `${i}th`; } };
 
         // --- Game Management Functions (NEW) ---
         async function loadGames() {
@@ -660,9 +660,14 @@
                 const winner = finalScores[0];
                 dom.mtGameOverTitle.textContent = `🎉 ${utils.sanitizeHTML(winner.name)} Wins! 🎉`;
 
-                dom.mtFinalScores.innerHTML = finalScores.map((p, index) =>
-                    `<b>${index + 1}. ${utils.sanitizeHTML(p.name)}:</b> ${p.totalScore} points`
-                ).join('<br>');
+                dom.mtFinalScores.innerHTML = finalScores.map((p, index) => {
+                    let diffHtml = '';
+                    if (index > 0) {
+                        const diff = p.totalScore - finalScores[index - 1].totalScore;
+                        diffHtml = ` <span style="color: #e76f51;">(+${diff})</span>`;
+                    }
+                    return `<b>${utils.getOrdinal(index + 1)} Place:</b> ${utils.sanitizeHTML(p.name)} - ${p.totalScore} points${diffHtml}`;
+                }).join('<br>');
             }
         }
 
