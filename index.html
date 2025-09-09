@@ -683,17 +683,27 @@
                 let rankingHtml = '<h4 style="margin-bottom: 5px; color: #0b4f6c;">Live Standings</h4><ul style="list-style-type: none; padding-left: 0; line-height: 1.5;">';
                 let lastScore = -1;
                 let rank = 0;
+                const leaderTotal = playerTotals[0].total;
+
                 playerTotals.forEach((player, index) => {
                     if (player.total !== lastScore) {
                         rank = index + 1;
                     }
                     lastScore = player.total;
 
-                    let behindText = '';
+                    let behindPreviousText = '';
                     if (index > 0) {
                         const pointsBehind = player.total - playerTotals[index - 1].total;
                         if (pointsBehind > 0) {
-                           behindText = ` <span style="font-size: 0.85em; color: #d95a3a;">(+${pointsBehind})</span>`;
+                           behindPreviousText = ` <span style="font-size: 0.85em; color: #d95a3a;">(+${pointsBehind})</span>`;
+                        }
+                    }
+
+                    let behindLeaderText = '';
+                    if (index > 0) {
+                        const pointsBehindLeader = player.total - leaderTotal;
+                        if (pointsBehindLeader > 0) {
+                            behindLeaderText = ` <span style="font-size: 0.8em; color: #6c757d;">(${pointsBehindLeader} from 1st)</span>`;
                         }
                     }
 
@@ -705,7 +715,8 @@
                     rankingHtml += `<span style="font-weight: bold; min-width: 25px; display: inline-block;">${rank}.</span>`;
                     rankingHtml += `<span style="font-weight: ${fontWeight}; color: ${nameColor};">${utils.sanitizeHTML(player.name)}:</span>`;
                     rankingHtml += ` ${player.total} pts`;
-                    rankingHtml += behindText;
+                    rankingHtml += behindPreviousText;
+                    rankingHtml += behindLeaderText;
                     rankingHtml += `</li>`;
                 });
                 rankingHtml += '</ul>';
