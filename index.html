@@ -249,7 +249,7 @@
                         <div id="mtScoresContainer">
                             <!-- Player scores will be injected here -->
                         </div>
-                        <p id="mtLeaderDisplay"></p>
+                        <div id="mtLeaderDisplay"></div>
                         <button id="mtSubmitRoundBtn">Submit Round Scores</button>
                         <button id="mtEndGameBtn" class="danger">End Game Early</button>
                     </div>
@@ -667,19 +667,51 @@
         }
 
         function updateMexicanTrainLeader() {
-            if (!mexicanTrainState || mexicanTrainState.status !== 'ongoing') return;
+            if (!mexicanTrainState || mexicanTrainState.status !== 'ongoing') {
+                dom.mtLeaderDisplay.innerHTML = '';
+                return;
+            }
 
             const playerTotals = Object.values(mexicanTrainState.players).map(p => {
-                const currentRoundScore = parseInt(dom.mtScoresContainer.querySelector(`.mt-score-input[data-player-id="${p.id}"]`)?.value, 10) || 0;
+                const currentRoundScoreInput = dom.mtScoresContainer.querySelector(`.mt-score-input[data-player-id="${p.id}"]`);
+                const currentRoundScore = currentRoundScoreInput ? (parseInt(currentRoundScoreInput.value, 10) || 0) : 0;
                 const previousTotal = p.scores.reduce((acc, score) => acc + score, 0);
                 return { name: p.name, total: previousTotal + currentRoundScore };
             }).sort((a, b) => a.total - b.total);
 
             if (playerTotals.length > 0) {
-                const leader = playerTotals[0];
-                dom.mtLeaderDisplay.textContent = `Current Leader: ${utils.sanitizeHTML(leader.name)} with ${leader.total} points`;
+                let rankingHtml = '<h4 style="margin-bottom: 5px; color: #0b4f6c;">Live Standings</h4><ul style="list-style-type: none; padding-left: 0; line-height: 1.5;">';
+                let lastScore = -1;
+                let rank = 0;
+                playerTotals.forEach((player, index) => {
+                    if (player.total !== lastScore) {
+                        rank = index + 1;
+                    }
+                    lastScore = player.total;
+
+                    let behindText = '';
+                    if (index > 0) {
+                        const pointsBehind = player.total - playerTotals[index - 1].total;
+                        if (pointsBehind > 0) {
+                           behindText = ` <span style="font-size: 0.85em; color: #d95a3a;">(+${pointsBehind})</span>`;
+                        }
+                    }
+
+                    const isLeader = rank === 1;
+                    const fontWeight = isLeader ? 'bold' : 'normal';
+                    const nameColor = isLeader ? '#1a7f9a' : '#333';
+
+                    rankingHtml += `<li style="padding: 3px 0; border-bottom: 1px solid #f2f2f2;">`;
+                    rankingHtml += `<span style="font-weight: bold; min-width: 25px; display: inline-block;">${rank}.</span>`;
+                    rankingHtml += `<span style="font-weight: ${fontWeight}; color: ${nameColor};">${utils.sanitizeHTML(player.name)}:</span>`;
+                    rankingHtml += ` ${player.total} pts`;
+                    rankingHtml += behindText;
+                    rankingHtml += `</li>`;
+                });
+                rankingHtml += '</ul>';
+                dom.mtLeaderDisplay.innerHTML = rankingHtml;
             } else {
-                dom.mtLeaderDisplay.textContent = '';
+                dom.mtLeaderDisplay.innerHTML = '';
             }
         }
 
