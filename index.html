@@ -607,7 +607,7 @@
                         let playerScoresHTML = Object.entries(mexicanTrainState.players).map(([playerId, data]) => {
                             const score = data.scores[roundIndex];
                             if (isEditing) {
-                                return `<input type="number" class="mt-edit-score-input" data-player-id="${playerId}" value="${score}" min="0">`;
+                                return `<span class="player-score"><b>${utils.sanitizeHTML(data.name)}:</b> <input type="number" class="mt-edit-score-input" data-player-id="${playerId}" value="${score}" min="0" style="width: 60px; padding: 5px;"></span>`;
                             }
                             return `<span class="player-score"><b>${utils.sanitizeHTML(data.name)}:</b> ${score}</span>`;
                         }).join('');
@@ -728,6 +728,11 @@
 
         async function saveEditedMexicanTrainRound(roundIndex) {
             const roundRow = dom.mtCompletedRounds.querySelector(`.mt-round-row[data-round-index="${roundIndex}"]`);
+            if (!roundRow) {
+                console.error("Could not find the round row to save.");
+                return;
+            }
+
             const scoreInputs = roundRow.querySelectorAll('.mt-edit-score-input');
             let allScoresValid = true;
             const newScores = {};
@@ -737,10 +742,10 @@
                 const score = parseInt(input.value, 10);
                 if (isNaN(score) || score < 0) {
                     allScoresValid = false;
-                    input.style.border = '1px solid red';
+                    input.style.border = '2px solid red';
                 } else {
                     newScores[playerId] = score;
-                    input.style.border = '';
+                    input.style.border = '1px solid #ccc';
                 }
             });
 
@@ -749,25 +754,38 @@
                 return;
             }
 
-            const button = roundRow.querySelector('.save-round-btn');
-            button.disabled = true;
+            const saveButton = roundRow.querySelector('.save-round-btn');
+            if (saveButton) {
+                saveButton.disabled = true;
+                saveButton.textContent = '💾 Saving...';
+            }
 
-            const updatedPlayers = { ...mexicanTrainState.players };
-            Object.keys(updatedPlayers).forEach(id => {
-                updatedPlayers[id].scores[roundIndex] = newScores[id] || 0;
+            const updatedPlayersState = JSON.parse(JSON.stringify(mexicanTrainState.players));
+
+            Object.keys(updatedPlayersState).forEach(playerId => {
+                if (newScores[playerId] !== undefined) {
+                    updatedPlayersState[playerId].scores[roundIndex] = newScores[playerId];
+                }
             });
 
             try {
                 const gameDocRef = doc(db, ACTIVE_GAMES_COLLECTION, 'mexican_train');
-                await updateDoc(gameDocRef, { players: updatedPlayers });
+                await updateDoc(gameDocRef, { players: updatedPlayersState });
 
-                mexicanTrainState.players = updatedPlayers;
-                delete mexicanTrainState.editingRoundIndex; // Exit editing mode
+                mexicanTrainState.players = updatedPlayersState;
+                delete mexicanTrainState.editingRoundIndex;
+
+                console.log("Successfully saved edited round. Re-rendering tracker.");
                 renderMexicanTrainTracker();
+                updateMexicanTrainLeader();
+
             } catch (error) {
                 console.error("Error saving edited round:", error);
                 alert(`Failed to save changes: ${error.message}`);
-                button.disabled = false;
+                if (saveButton) {
+                    saveButton.disabled = false;
+                    saveButton.textContent = '✔️ Save';
+                }
             }
         }
 
@@ -1074,6 +1092,9 @@
         const renderPlayerWinsChart = (period, displayDate) => { if (playerWinChartInstance) { playerWinChartInstance.destroy(); playerWinChartInstance = null; } if (!firebaseInitializedSuccessfully) {dom.noChartDataMsg.textContent="Charts unavailable (database error)."; dom.noChartDataMsg.classList.remove('hidden'); dom.playerWinCanvas.classList.add('hidden'); return;} const { start, end } = utils.getPeriodRange(period, displayDate); let chartTitleText = ''; const today = new Date(); today.setHours(0,0,0,0); const currentPeriodRange = utils.getPeriodRange(period, today); const isCurrentPeriod = currentPeriodRange.start.getTime() === start.getTime(); switch (period) { case 'week': chartTitleText = isCurrentPeriod ? 'Wins This Week' : `Week of ${start.toLocaleDateString()}`; break; case 'month': const monthName = utils.getFullMonthName(displayDate.getMonth()); chartTitleText = isCurrentPeriod ? `Wins This ${monthName}` : `Wins ${monthName} ${displayDate.getFullYear()}`; break; case 'year': chartTitleText = isCurrentPeriod ? `Wins This Year (${displayDate.getFullYear()})` : `Wins ${displayDate.getFullYear()}`; break; } dom.winChartTitle.textContent = chartTitleText; dom.prevPeriodBtn.classList.remove('hidden'); dom.nextPeriodBtn.classList.remove('hidden'); const endOfToday = new Date(); endOfToday.setHours(23,59,59,999); dom.nextPeriodBtn.disabled = end.getTime() >= endOfToday.getTime(); const periodWins = getWinsForPeriodLocal(period, displayDate); const totalWinsCount = periodWins.length; dom.totalPlayerWinsDisplay.textContent = `Total Wins: ${totalWinsCount}`; dom.totalPlayerWinsDisplay.classList.remove('hidden'); const hasPlayers = players.length > 0; const hasData = totalWinsCount > 0; let playerData = []; if (hasPlayers) { const winsByPlayer = players.reduce((acc, p) => { acc[p.id] = { name: p.name, count: 0 }; return acc; }, {}); periodWins.forEach(w => { if (w.playerId && winsByPlayer[w.playerId]) { winsByPlayer[w.playerId].count++; } }); playerData = Object.values(winsByPlayer); playerData.sort((a, b) => a.name.localeCompare(b.name)); } const showChart = hasPlayers && hasData; dom.playerWinCanvas.classList.toggle('hidden', !showChart); dom.noChartDataMsg.classList.toggle('hidden', showChart); if (!hasPlayers) { dom.noChartDataMsg.textContent = "Add players to see statistics."; dom.totalPlayerWinsDisplay.classList.add('hidden'); } else if (!hasData) { dom.noChartDataMsg.textContent = "No wins recorded for this period."; } if (showChart) { const ctx = dom.playerWinCanvas.getContext('2d'); if (!ctx) return; const labels = playerData.map(p => p.name); const dataCounts = playerData.map(p => p.count); playerWinChartInstance = new Chart(ctx, { type: 'bar', data: { labels: labels, datasets: [{ label: 'Wins', data: dataCounts, backgroundColor: '#219ebc', borderColor: '#1a7f9a', borderWidth: 1 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ticks: { stepSize: 1, precision: 0 } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(c) { let l = c.dataset.label || ''; if (l) { l += ': '; } if (c.parsed.y !== null) { l += c.parsed.y + (c.parsed.y === 1 ? ' win' : ' wins'); } return l; } } } } } }); } };
         const renderMonthlyBreakdownChart = (year) => { if (monthlyChartInstance) { monthlyChartInstance.destroy(); monthlyChartInstance = null; } if (!firebaseInitializedSuccessfully) {dom.noMonthlyChartDataMsg.textContent="Charts unavailable (database error)."; dom.noMonthlyChartDataMsg.classList.remove('hidden'); dom.monthlyWinsCanvas.classList.add('hidden'); return;} dom.monthlyChartTitle.textContent = `Monthly Winners for ${year}`; dom.nextYearBtn.disabled = year >= new Date().getFullYear(); const yearWins = getWinsForYearLocal(year); const totalWinsCount = yearWins.length; const hasData = totalWinsCount > 0; dom.totalMonthlyWinsDisplay.textContent = `Total Wins: ${totalWinsCount}`; dom.totalMonthlyWinsDisplay.classList.remove('hidden'); let monthlyResults = []; let overallMaxWinningScore = 0; if(hasData) { const monthlyPlayerWins = {}; yearWins.forEach(win => { if (win.timestamp && typeof win.timestamp.toDate === 'function' && win.playerId) { const mI = win.timestamp.toDate().getMonth(); monthlyPlayerWins[mI] = monthlyPlayerWins[mI] || {}; monthlyPlayerWins[mI][win.playerId] = (monthlyPlayerWins[mI][win.playerId] || 0) + 1; } }); for (let i = 0; i < 12; i++) { const monthData = monthlyPlayerWins[i]; let winners = []; let maxScore = 0; if (monthData && Object.keys(monthData).length > 0) { maxScore = Math.max(...Object.values(monthData)); if (maxScore > overallMaxWinningScore) overallMaxWinningScore = maxScore; winners = Object.entries(monthData).filter(([_, score]) => score === maxScore).map(([playerId, _]) => utils.sanitizeHTML(players.find(p => p.id === playerId)?.name ?? 'Unknown')); } monthlyResults.push({ monthIndex: i, winnerNames: winners, winningScore: maxScore }); } } else { for (let i = 0; i < 12; i++) monthlyResults.push({ monthIndex: i, winnerNames: [], winningScore: 0 }); } dom.monthlyWinsCanvas.classList.toggle('hidden', !hasData); dom.noMonthlyChartDataMsg.classList.toggle('hidden', hasData); if (!hasData) dom.noMonthlyChartDataMsg.textContent = `No wins recorded for ${year}.`; if(hasData) { const ctx = dom.monthlyWinsCanvas.getContext('2d'); if (!ctx) return; const labels = monthlyResults.map(r => utils.getMonthName(r.monthIndex)); const dataScores = monthlyResults.map(r => r.winningScore); const yAxisMax = Math.max(3, overallMaxWinningScore + 2); monthlyChartInstance = new Chart(ctx, { type: 'bar', data: { labels: labels, datasets: [{ label: 'Winning Score', data: dataScores, backgroundColor: '#fdc500', borderColor: '#e8b700', borderWidth: 1 }] }, options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, max: yAxisMax, ticks: { stepSize: 1, precision: 0 } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { title: (tooltipItems) => `${utils.getFullMonthName(tooltipItems[0].dataIndex)} ${year}`, label: (context) => { const index = context.dataIndex; const result = monthlyResults[index]; let winnerLabel = (!result || result.winnerNames.length === 0) ? 'Winner: N/A' : (result.winnerNames.length === 1 ? `Winner: ${result.winnerNames[0]}` : `Tie: ${result.winnerNames.join(', ')}`); const scoreLabel = `Score: ${context.parsed.y}`; return [winnerLabel, scoreLabel]; } } }, datalabels: { display: (context) => context.dataset.data[context.dataIndex] > 0, anchor: 'end', align: 'top', offset: -2, color: '#555', font: { size: 10, weight: 'bold' }, formatter: (value, context) => { const index = context.dataIndex; const result = monthlyResults[index]; if (!result || result.winnerNames.length === 0) return ''; let name = result.winnerNames.length === 1 ? result.winnerNames[0] : 'Tie'; return name.length > 8 ? name.substring(0, 7) + '…' : name; } } } } }); } };
         const renderApp = () => { renderPlayerManagementList(); renderScoreTrackingList(); renderTodaysWinsList(); renderDashboard(); console.log("renderApp: UI rendered/updated.");};
+
+        // Expose functions for testing
+        window.renderApp = renderApp;
 
         // --- Timer Functions ---
         const formatTimerTime = (totalSeconds) => { const minutes = Math.floor(totalSeconds / 60); const seconds = totalSeconds % 60; return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`; };
