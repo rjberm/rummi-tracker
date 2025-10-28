@@ -252,6 +252,7 @@
                         <div id="mtLeaderDisplay"></div>
                         <button id="mtSubmitRoundBtn">Submit Round Scores</button>
                         <button id="mtEndGameBtn" class="danger">End Game Early</button>
+                        <button id="mtCancelGameBtn" class="secondary">Cancel Game</button>
                     </div>
                 </div>
                  <div id="mtGameOver" class="hidden">
@@ -728,6 +729,10 @@
 
         async function saveEditedMexicanTrainRound(roundIndex) {
             const roundRow = dom.mtCompletedRounds.querySelector(`.mt-round-row[data-round-index="${roundIndex}"]`);
+            if (!roundRow) {
+                console.error("Could not find the round row to save.");
+                return;
+            }
             const scoreInputs = roundRow.querySelectorAll('.mt-edit-score-input');
             let allScoresValid = true;
             const newScores = {};
@@ -750,11 +755,14 @@
             }
 
             const button = roundRow.querySelector('.save-round-btn');
-            button.disabled = true;
+            if (button) button.disabled = true;
 
-            const updatedPlayers = { ...mexicanTrainState.players };
+            // Deep copy players object to avoid direct state mutation
+            const updatedPlayers = JSON.parse(JSON.stringify(mexicanTrainState.players));
             Object.keys(updatedPlayers).forEach(id => {
-                updatedPlayers[id].scores[roundIndex] = newScores[id] || 0;
+                if (updatedPlayers[id].scores && updatedPlayers[id].scores[roundIndex] !== undefined) {
+                    updatedPlayers[id].scores[roundIndex] = newScores[id] || 0;
+                }
             });
 
             try {
@@ -767,7 +775,7 @@
             } catch (error) {
                 console.error("Error saving edited round:", error);
                 alert(`Failed to save changes: ${error.message}`);
-                button.disabled = false;
+                if (button) button.disabled = false;
             }
         }
 
@@ -915,6 +923,27 @@
                 alert(`Failed to end game: ${error.message}`);
             } finally {
                 dom.mtEndGameBtn.disabled = false;
+            }
+        }
+
+        async function cancelMexicanTrainGame() {
+            if (!mexicanTrainState || !confirm("Are you sure you want to completely cancel this game? No winner will be recorded and all progress will be lost.")) {
+                return;
+            }
+
+            const cancelButton = dom.mtGameActive.querySelector('#mtCancelGameBtn');
+            if (cancelButton) cancelButton.disabled = true;
+
+            try {
+                const gameDocRef = doc(db, ACTIVE_GAMES_COLLECTION, 'mexican_train');
+                await deleteDoc(gameDocRef);
+                mexicanTrainState = null;
+                alert("The game has been cancelled.");
+                renderMexicanTrainTracker(); // This will show the setup screen
+            } catch (error) {
+                console.error("Error cancelling game:", error);
+                alert(`Failed to cancel game: ${error.message}`);
+                if (cancelButton) cancelButton.disabled = false;
             }
         }
 
@@ -2007,6 +2036,8 @@ ${gameDataSummary}
             } else if (target.classList.contains('save-round-btn')) {
                 const roundIndex = parseInt(target.dataset.roundIndex, 10);
                 saveEditedMexicanTrainRound(roundIndex);
+            } else if (target.id === 'mtCancelGameBtn') {
+                cancelMexicanTrainGame();
             }
         });
 
