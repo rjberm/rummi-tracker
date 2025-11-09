@@ -296,6 +296,7 @@
         let currentGameId = DEFAULT_GAME_ID; // NEW: Tracks the current game
         const ACTIVE_GAMES_COLLECTION = 'activeGames'; // NEW: Collection for complex games
         let mexicanTrainState = null; // NEW: To hold the state of the current MT game
+        let debounceTimer;
 
 
         let currentDashboardPeriod = 'month';
@@ -639,10 +640,11 @@
                 dom.mtRoundTitle.textContent = `Current Round: ${mexicanTrainState.currentRound}`;
                 const playerInputHTML = Object.entries(mexicanTrainState.players).map(([id, data]) => {
                     const totalScore = data.scores.reduce((acc, score) => acc + score, 0);
+                    const inProgressScore = mexicanTrainState.inProgressScores?.[id] || '';
                     return `
                         <span class="mt-player-name">${utils.sanitizeHTML(data.name)}</span>
                         <span class="mt-player-total-score">Total: ${totalScore}</span>
-                        <input type="number" class="mt-score-input" data-player-id="${id}" placeholder="Score" min="0">
+                        <input type="number" class="mt-score-input" data-player-id="${id}" placeholder="Score" min="0" value="${inProgressScore}">
                     `;
                 }).join('');
                 dom.mtScoresContainer.innerHTML = playerInputHTML;
@@ -793,7 +795,8 @@
                 gameId: 'mexican_train',
                 status: 'ongoing',
                 currentRound: 12,
-                players: {}
+                players: {},
+                inProgressScores: {}
             };
 
             selectedCheckboxes.forEach(cb => {
@@ -856,7 +859,8 @@
                 ...mexicanTrainState,
                 players: updatedPlayers,
                 currentRound: newRound,
-                status: newStatus
+                status: newStatus,
+                inProgressScores: {}
             };
 
             try {
@@ -864,7 +868,8 @@
                 await updateDoc(gameDocRef, {
                     players: updatedPlayers,
                     currentRound: newRound,
-                    status: newStatus
+                    status: newStatus,
+                    inProgressScores: {}
                 });
 
                 mexicanTrainState = updatedState;
@@ -908,12 +913,13 @@
 
             const updatedState = {
                 ...mexicanTrainState,
-                status: 'completed'
+                status: 'completed',
+                inProgressScores: {}
             };
 
             try {
                 const gameDocRef = doc(db, ACTIVE_GAMES_COLLECTION, 'mexican_train');
-                await updateDoc(gameDocRef, { status: 'completed' });
+                await updateDoc(gameDocRef, { status: 'completed', inProgressScores: {} });
                 await recordWin(winnerId);
                 mexicanTrainState = updatedState;
                 alert(`${playerTotals[0].name} wins the game!`);
@@ -945,6 +951,31 @@
                 alert(`Failed to cancel game: ${error.message}`);
                 if (cancelButton) cancelButton.disabled = false;
             }
+        }
+
+        async function handleInProgressScoreChange(playerId, score) {
+            if (!mexicanTrainState) return;
+
+            // Update local state immediately for responsiveness
+            if (!mexicanTrainState.inProgressScores) {
+                mexicanTrainState.inProgressScores = {};
+            }
+            mexicanTrainState.inProgressScores[playerId] = score;
+
+            // Debounce the Firestore update
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(async () => {
+                if (!db) return;
+                try {
+                    const gameDocRef = doc(db, ACTIVE_GAMES_COLLECTION, 'mexican_train');
+                    await updateDoc(gameDocRef, {
+                        inProgressScores: mexicanTrainState.inProgressScores
+                    });
+                    console.log("In-progress scores saved to Firestore.");
+                } catch (error) {
+                    console.error("Error saving in-progress scores:", error);
+                }
+            }, 1500); // Save after 1.5 seconds of inactivity
         }
 
         // --- Audio Settings Management ---
@@ -2021,6 +2052,9 @@ ${gameDataSummary}
         });
         dom.mexicanTrainTracker.addEventListener('input', (e) => {
             if (e.target.classList.contains('mt-score-input')) {
+                const playerId = e.target.dataset.playerId;
+                const score = e.target.value;
+                handleInProgressScoreChange(playerId, score);
                 updateMexicanTrainLeader();
             }
         });
