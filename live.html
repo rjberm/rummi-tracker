@@ -93,6 +93,18 @@
         #winnerDisplay .winner-name { font-size: 6em; font-weight: bold; margin: 0.2em 0; color: #fff; text-shadow: 0 0 20px rgba(255, 215, 0, 0.5); }
         #winnerDisplay .congrats-msg { font-size: 2em; color: #aaa; }
 
+        /* --- Round Indicator Styles --- */
+        #roundDisplay {
+            font-size: 1.5em;
+            color: var(--highlight-color);
+            margin-bottom: 20px;
+            font-weight: bold;
+            background: rgba(33, 158, 188, 0.1);
+            padding: 5px 15px;
+            border-radius: 20px;
+            border: 1px solid var(--highlight-color);
+        }
+
         /* --- Graph Styles --- */
         #graphDisplay {
             width: 90%;
@@ -127,6 +139,7 @@
         <!-- Scoreboard View -->
         <div id="scoreboardView" class="fade-in">
             <h1>Mexican Train Live</h1>
+            <div id="roundDisplay">Round: -</div>
             <table class="scoreboard">
                 <thead>
                     <tr>
@@ -338,14 +351,21 @@
                  if(!currentGameState) {
                      dom.waitingForGame.classList.remove('hidden');
                      dom.scoreboardBody.innerHTML = '';
+                     document.getElementById('roundDisplay').style.display = 'none';
                      return;
                  }
-                 // If completed, we might still want to show the final scoreboard underneath or handled by Winner view.
-                 // But typically 'scoreboard' view implies active game.
-                 // If status is completed but we are in scoreboard view (unlikely due to handleGameUpdate logic, but possible if manually triggered), show final scores.
             }
 
             dom.waitingForGame.classList.add('hidden');
+
+            // Update Round Display
+            const roundDisplay = document.getElementById('roundDisplay');
+            if (currentGameState.currentRound !== undefined) {
+                roundDisplay.textContent = `Round: ${currentGameState.currentRound}`;
+                roundDisplay.style.display = 'block';
+            } else {
+                roundDisplay.style.display = 'none';
+            }
 
             const playersData = currentGameState.players || {};
             const inProgressScores = currentGameState.inProgressScores || {};
