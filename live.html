@@ -16,6 +16,8 @@
             --bronze: #cd7f32;
             --danger: #e76f51;
             --success: #2a9d8f;
+            --pending-color: #888; /* Color for pending scores */
+            --warning-color: #ff9f1c; /* Color for updating indicator */
         }
 
         body {
@@ -25,24 +27,38 @@
             margin: 0;
             padding: 0;
             height: 100vh;
-            overflow: hidden;
+            width: 100vw;
+            overflow: hidden; /* Prevent scrolling */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #scaleWrapper {
+            width: 1200px; /* Fixed reference width */
+            height: 800px; /* Fixed reference height - adjust as needed */
             display: flex;
             flex-direction: column;
+            justify-content: center; /* Center vertically in the wrapper */
+            align-items: center;
+            transform-origin: center center;
+            /* Border for debugging: border: 1px solid red; */
         }
 
         .container {
-            flex-grow: 1;
+            width: 100%;
+            height: 100%;
             display: flex;
             flex-direction: column;
-            justify-content: center;
+            justify-content: flex-start; /* Start from top */
             align-items: center;
             padding: 20px;
-            position: relative;
+            box-sizing: border-box;
         }
 
         h1 {
-            font-size: 2.5em;
-            margin-bottom: 0.5em;
+            font-size: 3em;
+            margin: 0 0 0.5em 0;
             text-align: center;
             color: var(--highlight-color);
             text-transform: uppercase;
@@ -51,15 +67,15 @@
 
         /* --- Scoreboard Styles --- */
         .scoreboard {
-            width: 90%;
-            max-width: 1200px;
+            width: 100%;
             border-collapse: collapse;
             font-size: 2em;
+            margin-top: 10px;
         }
 
         .scoreboard th {
             text-align: left;
-            padding: 15px;
+            padding: 10px 15px;
             border-bottom: 2px solid #444;
             color: #888;
             font-size: 0.6em;
@@ -67,8 +83,9 @@
         }
 
         .scoreboard td {
-            padding: 20px 15px;
+            padding: 15px 15px;
             border-bottom: 1px solid #333;
+            vertical-align: middle;
         }
 
         .scoreboard tr.rank-1 td { color: var(--gold); font-weight: bold; font-size: 1.1em; }
@@ -76,16 +93,24 @@
         .scoreboard tr.rank-3 td { color: var(--bronze); }
 
         .rank-cell { width: 80px; text-align: center; }
-        .score-cell { font-weight: bold; text-align: right; width: 150px; }
+        .score-cell { font-weight: bold; text-align: right; width: 250px; } /* Increased width for pending score */
         .diff-cell { font-size: 0.6em; color: #888; text-align: right; width: 200px; }
         .diff-cell span { display: block; }
         .diff-leader { color: var(--danger); }
         .diff-prev { color: var(--success); }
 
+        .pending-score {
+            font-size: 0.7em;
+            color: var(--pending-color);
+            margin-left: 10px;
+            font-weight: normal;
+        }
+
         /* --- Winner Styles --- */
         #winnerDisplay {
             text-align: center;
             display: none;
+            width: 100%;
             animation: fadeIn 1s ease-in;
         }
 
@@ -95,27 +120,48 @@
 
         /* --- Round Indicator Styles --- */
         #roundDisplay {
-            font-size: 1.5em;
+            font-size: 1.8em;
             color: var(--highlight-color);
-            margin-bottom: 20px;
+            margin-bottom: 5px; /* Reduced margin */
             font-weight: bold;
             background: rgba(33, 158, 188, 0.1);
-            padding: 5px 15px;
-            border-radius: 20px;
-            border: 1px solid var(--highlight-color);
+            padding: 5px 20px;
+            border-radius: 30px;
+            border: 2px solid var(--highlight-color);
+            display: inline-block; /* Center properly */
+        }
+
+        .updating-indicator {
+            font-size: 1.2em;
+            color: var(--warning-color);
+            margin-top: 5px;
+            margin-bottom: 15px;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            animation: blink 1.5s infinite;
+            height: 1.5em; /* Reserve height to prevent jumping */
+        }
+
+        @keyframes blink {
+            0% { opacity: 0.3; }
+            50% { opacity: 1; }
+            100% { opacity: 0.3; }
         }
 
         /* --- Graph Styles --- */
         #graphDisplay {
-            width: 90%;
-            height: 80%;
+            width: 100%;
+            height: 100%;
             display: none;
+            flex-direction: column;
+            justify-content: center;
         }
 
         #graphTitle {
             text-align: center;
             margin-bottom: 20px;
-            font-size: 1.5em;
+            font-size: 2em;
             color: #ccc;
         }
 
@@ -130,47 +176,52 @@
             right: 10px;
             font-size: 0.8em;
             color: #444;
+            pointer-events: none; /* Don't block clicks if it overlays something */
         }
     </style>
 </head>
 <body>
 
-    <div class="container" id="mainContainer">
-        <!-- Scoreboard View -->
-        <div id="scoreboardView" class="fade-in">
-            <h1>Mexican Train Live</h1>
-            <div id="roundDisplay">Round: -</div>
-            <table class="scoreboard">
-                <thead>
-                    <tr>
-                        <th class="rank-cell">Rank</th>
-                        <th>Player</th>
-                        <th class="score-cell">Total Score</th>
-                        <th class="diff-cell">Behind Leader / Prev</th>
-                    </tr>
-                </thead>
-                <tbody id="scoreboardBody">
-                    <!-- Rows injected via JS -->
-                </tbody>
-            </table>
-            <div id="waitingForGame" class="hidden" style="text-align: center; margin-top: 50px; color: #666;">
-                <h2>Waiting for game to start...</h2>
+    <div id="scaleWrapper">
+        <div class="container" id="mainContainer">
+            <!-- Scoreboard View -->
+            <div id="scoreboardView" class="fade-in" style="width: 100%; display: flex; flex-direction: column; align-items: center;">
+                <h1>Mexican Train Live</h1>
+                <div id="roundDisplay">Round: -</div>
+                <div id="updatingIndicator" class="updating-indicator hidden">Updating numbers...</div>
+
+                <table class="scoreboard">
+                    <thead>
+                        <tr>
+                            <th class="rank-cell">Rank</th>
+                            <th>Player</th>
+                            <th class="score-cell">Total Score</th>
+                            <th class="diff-cell">Behind Leader / Prev</th>
+                        </tr>
+                    </thead>
+                    <tbody id="scoreboardBody">
+                        <!-- Rows injected via JS -->
+                    </tbody>
+                </table>
+                <div id="waitingForGame" class="hidden" style="text-align: center; margin-top: 50px; color: #666;">
+                    <h2>Waiting for game to start...</h2>
+                </div>
             </div>
-        </div>
 
-        <!-- Winner View -->
-        <div id="winnerDisplay">
-            <h1>🏆 WINNER! 🏆</h1>
-            <div class="winner-name" id="winnerName">Player</div>
-            <div class="congrats-msg">Congratulations on the victory!</div>
-        </div>
+            <!-- Winner View -->
+            <div id="winnerDisplay">
+                <h1>🏆 WINNER! 🏆</h1>
+                <div class="winner-name" id="winnerName">Player</div>
+                <div class="congrats-msg">Congratulations on the victory!</div>
+            </div>
 
-        <!-- Graph View -->
-        <div id="graphDisplay" class="fade-in">
-             <h2 id="graphTitle">Monthly Leaderboard</h2>
-             <div style="position: relative; height: 100%; width: 100%;">
-                <canvas id="monthlyChart"></canvas>
-             </div>
+            <!-- Graph View -->
+            <div id="graphDisplay" class="fade-in">
+                 <h2 id="graphTitle">Monthly Leaderboard</h2>
+                 <div style="position: relative; height: 80%; width: 100%;">
+                    <canvas id="monthlyChart"></canvas>
+                 </div>
+            </div>
         </div>
     </div>
 
@@ -197,17 +248,17 @@
         // --- State ---
         let currentGameState = null;
         let allWins = [];
-        let players = []; // We load players map from game state or fetch if needed
+        let playersMap = {}; // Defined early for use in render
         let lastUpdateTimestamp = Date.now();
         let currentView = 'scoreboard'; // 'scoreboard', 'winner', 'graph'
         let chartInstance = null;
         const IDLE_TIMEOUT_MS = 60000; // 1 minute
         const GRAPH_DISPLAY_DURATION_MS = 10000; // 10 seconds
         let idleInterval;
-        let cycleInterval;
 
         // --- DOM Elements ---
         const dom = {
+            scaleWrapper: document.getElementById('scaleWrapper'),
             scoreboardView: document.getElementById('scoreboardView'),
             scoreboardBody: document.getElementById('scoreboardBody'),
             waitingForGame: document.getElementById('waitingForGame'),
@@ -216,12 +267,35 @@
             graphDisplay: document.getElementById('graphDisplay'),
             graphTitle: document.getElementById('graphTitle'),
             monthlyChart: document.getElementById('monthlyChart'),
-            statusBar: document.getElementById('statusBar')
+            statusBar: document.getElementById('statusBar'),
+            updatingIndicator: document.getElementById('updatingIndicator')
         };
+
+        // --- Scaling Logic ---
+        function resizeContent() {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            const targetWidth = 1200; // The width our design is based on
+            const targetHeight = 800; // The height our design is based on
+
+            const scaleX = width / targetWidth;
+            const scaleY = height / targetHeight;
+
+            // Choose the smaller scale to fit entirely within the viewport
+            // Subtract a tiny bit to ensure no edge clipping due to rounding
+            const scale = Math.min(scaleX, scaleY) * 0.95;
+
+            dom.scaleWrapper.style.transform = `scale(${scale})`;
+        }
+
+        window.addEventListener('resize', resizeContent);
+        window.addEventListener('DOMContentLoaded', resizeContent);
 
         // --- Logic ---
 
         function init() {
+            resizeContent(); // Initial scale
+
             if(typeof Chart !== 'undefined' && typeof ChartDataLabels !== 'undefined') {
                 Chart.register(ChartDataLabels);
             }
@@ -248,6 +322,17 @@
                 if (currentView === 'graph') {
                     renderGraph();
                 }
+            });
+
+             // Add listener for players
+            onSnapshot(collection(db, 'players'), (snapshot) => {
+                snapshot.docs.forEach(doc => {
+                    playersMap[doc.id] = doc.data().name;
+                });
+                // If graph is active, refresh it to show correct names
+                if (currentView === 'graph') renderGraph();
+                // If scoreboard active, re-render to ensure names are up to date
+                if (currentView === 'scoreboard') renderScoreboard();
             });
 
             // Start Idle/Cycle Timer
@@ -287,6 +372,8 @@
             dom.scoreboardView.classList.add('hidden');
             dom.winnerDisplay.classList.add('hidden');
             dom.graphDisplay.classList.add('hidden');
+            dom.graphDisplay.style.display = 'none'; // Ensure display none is reset
+            dom.winnerDisplay.style.display = 'none';
 
             if (viewName === 'scoreboard') {
                 dom.scoreboardView.classList.remove('hidden');
@@ -296,7 +383,7 @@
                 dom.winnerDisplay.classList.remove('hidden');
                 renderWinner();
             } else if (viewName === 'graph') {
-                dom.graphDisplay.style.display = 'block';
+                dom.graphDisplay.style.display = 'flex'; // Use flex for graph container
                 dom.graphDisplay.classList.remove('hidden');
                 renderGraph();
             }
@@ -308,12 +395,6 @@
 
             if (currentGameState && currentGameState.status === 'completed') {
                 // CYCLE: Winner (10s) <-> Graph (10s)
-                // We use a simple modulo logic based on time since completion (or last update)
-                // However, lastUpdateTimestamp resets on db update. Let's use a local cycle state.
-                // Actually, simpler: toggle every 10 seconds.
-
-                // We need a stable reference time. Let's use `now`.
-                // cyclePhase: 0-10s -> Winner, 10-20s -> Graph, 20-30s -> Winner...
                 const cycleDuration = 20000; // 20s total cycle
                 const phase = timeSinceLastUpdate % cycleDuration;
 
@@ -346,6 +427,7 @@
 
         function renderScoreboard() {
             dom.scoreboardBody.innerHTML = '';
+            dom.updatingIndicator.classList.add('hidden'); // Hide by default
 
             if (!currentGameState || currentGameState.status !== 'ongoing') {
                  if(!currentGameState) {
@@ -362,25 +444,37 @@
             const roundDisplay = document.getElementById('roundDisplay');
             if (currentGameState.currentRound !== undefined) {
                 roundDisplay.textContent = `Round: ${currentGameState.currentRound}`;
-                roundDisplay.style.display = 'block';
+                roundDisplay.style.display = 'inline-block';
             } else {
                 roundDisplay.style.display = 'none';
             }
 
             const playersData = currentGameState.players || {};
             const inProgressScores = currentGameState.inProgressScores || {};
+            let isUpdating = false;
 
-            // Calculate Totals
+            // Calculate Totals - SORTING uses only confirmed scores
             const leaderboard = Object.entries(playersData).map(([id, data]) => {
                 const completedTotal = (data.scores || []).reduce((a, b) => a + b, 0);
-                const currentRound = inProgressScores[id] || 0; // Live typing updates!
-                const total = completedTotal + (parseInt(currentRound) || 0);
+                const currentRound = inProgressScores[id] ? parseInt(inProgressScores[id]) : 0;
+
+                if (inProgressScores[id] !== undefined && inProgressScores[id] !== "" && currentRound >= 0) {
+                    isUpdating = true;
+                }
+
                 return {
                     id,
                     name: data.name,
-                    total
+                    total: completedTotal, // Used for sorting and main display
+                    pending: currentRound,
+                    hasPending: inProgressScores[id] !== undefined && inProgressScores[id] !== ""
                 };
             });
+
+            // Show updating indicator if any activity
+            if (isUpdating) {
+                dom.updatingIndicator.classList.remove('hidden');
+            }
 
             // Sort: Lowest score wins in Mexican Train
             leaderboard.sort((a, b) => a.total - b.total);
@@ -414,10 +508,15 @@
                      diffHtml = `<span style="color:var(--gold)">LEADER</span>`;
                 }
 
+                let scoreContent = `${player.total}`;
+                if (player.hasPending) {
+                    scoreContent += `<span class="pending-score">(+${player.pending})</span>`;
+                }
+
                 tr.innerHTML = `
                     <td class="rank-cell">#${rank}</td>
                     <td>${escapeHtml(player.name)}</td>
-                    <td class="score-cell">${player.total}</td>
+                    <td class="score-cell">${scoreContent}</td>
                     <td class="diff-cell">${diffHtml}</td>
                 `;
                 dom.scoreboardBody.appendChild(tr);
@@ -460,16 +559,6 @@
 
             // Aggregate
             const winCounts = {};
-            // We need player names. We can try to get them from currentGameState players if available,
-            // otherwise we might need a map. Since we don't have a separate 'players' collection listener here
-            // (to keep it simple), we'll try to rely on the fact that 'wins' usually contains playerId.
-            // Wait, existing 'wins' collection only has 'playerId'.
-            // I need to know the player NAME.
-            // PROPER FIX: I should also fetch 'players' collection once or listen to it.
-            // I'll add a listener for players collection in init.
-
-            // For now, let's assume 'playersMap' is populated.
-            // See init() update below.
 
             monthlyWins.forEach(w => {
                 const name = playersMap[w.playerId] || 'Unknown';
@@ -530,19 +619,6 @@
                 }
             });
         }
-
-        // --- Helper: Players Map ---
-        let playersMap = {};
-        // Add listener for players
-        onSnapshot(collection(db, 'players'), (snapshot) => {
-            snapshot.docs.forEach(doc => {
-                playersMap[doc.id] = doc.data().name;
-            });
-            // If graph is active, refresh it to show correct names
-            if (currentView === 'graph') renderGraph();
-            // If scoreboard active, re-render to ensure names are up to date (though usually game state has names)
-            if (currentView === 'scoreboard') renderScoreboard();
-        });
 
         function escapeHtml(text) {
             if (!text) return text;
