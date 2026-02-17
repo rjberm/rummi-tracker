@@ -16,8 +16,8 @@
             --bronze: #cd7f32;
             --danger: #e76f51;
             --success: #2a9d8f;
-            --pending-color: #888; /* Color for pending scores */
-            --warning-color: #ff9f1c; /* Color for updating indicator */
+            --pending-color: #888;
+            --warning-color: #ff9f1c;
         }
 
         body {
@@ -30,19 +30,7 @@
             width: 100vw;
             overflow: hidden; /* Prevent scrolling */
             display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-
-        #scaleWrapper {
-            width: 1200px; /* Fixed reference width */
-            height: 800px; /* Fixed reference height - adjust as needed */
-            display: flex;
             flex-direction: column;
-            justify-content: center; /* Center vertically in the wrapper */
-            align-items: center;
-            transform-origin: center center;
-            /* Border for debugging: border: 1px solid red; */
         }
 
         .container {
@@ -50,59 +38,88 @@
             height: 100%;
             display: flex;
             flex-direction: column;
-            justify-content: flex-start; /* Start from top */
+            justify-content: flex-start;
             align-items: center;
-            padding: 20px;
+            padding: 5px; /* Minimal padding */
             box-sizing: border-box;
+            overflow: hidden; /* Ensure content stays within viewport */
         }
 
+        /* Responsive Headers */
         h1 {
-            font-size: 3em;
-            margin: 0 0 0.5em 0;
+            font-size: clamp(1.5rem, 5vw, 3rem); /* Scales between 1.5rem and 3rem based on width */
+            margin: 0.2em 0;
             text-align: center;
             color: var(--highlight-color);
             text-transform: uppercase;
             letter-spacing: 2px;
+            white-space: nowrap; /* Prevent wrapping on small screens if possible */
         }
 
         /* --- Scoreboard Styles --- */
+        #scoreboardView {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            /* Allow scrolling within scoreboard if too many rows, though we aim to fit */
+            overflow-y: auto;
+        }
+
         .scoreboard {
             width: 100%;
             border-collapse: collapse;
-            font-size: 2em;
             margin-top: 10px;
+            flex-grow: 1; /* Allow table to take available space */
         }
 
         .scoreboard th {
             text-align: left;
-            padding: 10px 15px;
+            padding: 1vh 2vw;
             border-bottom: 2px solid #444;
             color: #888;
-            font-size: 0.6em;
+            font-size: clamp(0.6rem, 2vw, 1rem);
             text-transform: uppercase;
         }
 
         .scoreboard td {
-            padding: 15px 15px;
+            padding: 1.5vh 2vw;
             border-bottom: 1px solid #333;
             vertical-align: middle;
+            font-size: clamp(1.2rem, 4vw, 2.5rem); /* Responsive font size */
         }
 
-        .scoreboard tr.rank-1 td { color: var(--gold); font-weight: bold; font-size: 1.1em; }
+        .scoreboard tr.rank-1 td { color: var(--gold); font-weight: bold; }
         .scoreboard tr.rank-2 td { color: var(--silver); }
         .scoreboard tr.rank-3 td { color: var(--bronze); }
 
-        .rank-cell { width: 80px; text-align: center; }
-        .score-cell { font-weight: bold; text-align: right; width: 250px; } /* Increased width for pending score */
-        .diff-cell { font-size: 0.6em; color: #888; text-align: right; width: 200px; }
+        .rank-cell {
+            width: 10%;
+            text-align: center;
+            font-size: clamp(1rem, 3vw, 2rem);
+        }
+
+        .score-cell {
+            font-weight: bold;
+            text-align: right;
+            width: 30%;
+        }
+
+        .diff-cell {
+            font-size: clamp(0.6rem, 2vw, 1rem);
+            color: #888;
+            text-align: right;
+            width: 30%;
+        }
         .diff-cell span { display: block; }
         .diff-leader { color: var(--danger); }
         .diff-prev { color: var(--success); }
 
         .pending-score {
-            font-size: 0.7em;
+            font-size: 0.6em;
             color: var(--pending-color);
-            margin-left: 10px;
+            margin-left: 5px;
             font-weight: normal;
         }
 
@@ -111,36 +128,47 @@
             text-align: center;
             display: none;
             width: 100%;
+            height: 100%;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
             animation: fadeIn 1s ease-in;
         }
 
-        #winnerDisplay h1 { font-size: 3em; margin-bottom: 0.2em; color: var(--gold); }
-        #winnerDisplay .winner-name { font-size: 6em; font-weight: bold; margin: 0.2em 0; color: #fff; text-shadow: 0 0 20px rgba(255, 215, 0, 0.5); }
-        #winnerDisplay .congrats-msg { font-size: 2em; color: #aaa; }
+        #winnerDisplay h1 { font-size: clamp(2rem, 6vw, 4rem); margin-bottom: 0.2em; color: var(--gold); }
+        #winnerDisplay .winner-name {
+            font-size: clamp(3rem, 15vw, 8rem);
+            font-weight: bold;
+            margin: 0.2em 0;
+            color: #fff;
+            text-shadow: 0 0 20px rgba(255, 215, 0, 0.5);
+            word-break: break-word;
+        }
+        #winnerDisplay .congrats-msg { font-size: clamp(1rem, 4vw, 2.5rem); color: #aaa; }
 
         /* --- Round Indicator Styles --- */
         #roundDisplay {
-            font-size: 1.8em;
+            font-size: clamp(1rem, 4vw, 2rem);
             color: var(--highlight-color);
-            margin-bottom: 5px; /* Reduced margin */
+            margin-bottom: 0.5vh;
             font-weight: bold;
             background: rgba(33, 158, 188, 0.1);
-            padding: 5px 20px;
+            padding: 0.5vh 2vw;
             border-radius: 30px;
             border: 2px solid var(--highlight-color);
-            display: inline-block; /* Center properly */
+            display: inline-block;
         }
 
         .updating-indicator {
-            font-size: 1.2em;
+            font-size: clamp(0.8rem, 3vw, 1.5rem);
             color: var(--warning-color);
-            margin-top: 5px;
-            margin-bottom: 15px;
+            margin-top: 0.5vh;
+            margin-bottom: 1vh;
             font-weight: bold;
             text-transform: uppercase;
             letter-spacing: 1px;
             animation: blink 1.5s infinite;
-            height: 1.5em; /* Reserve height to prevent jumping */
+            height: 1.5em;
         }
 
         @keyframes blink {
@@ -156,13 +184,58 @@
             display: none;
             flex-direction: column;
             justify-content: center;
+            align-items: center;
+            padding: 10px;
         }
 
         #graphTitle {
             text-align: center;
-            margin-bottom: 20px;
-            font-size: 2em;
+            margin-bottom: 2vh;
+            font-size: clamp(1.5rem, 5vw, 3rem);
             color: #ccc;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 80vh;
+            width: 100%;
+            flex-grow: 1;
+        }
+
+        /* --- Mobile / Portrait Optimizations --- */
+        @media (max-width: 600px) {
+            .container { padding: 2px; }
+
+            .scoreboard th, .scoreboard td {
+                padding: 10px 5px; /* Tighter padding */
+            }
+
+            /* Stack diff info horizontally or adjust font */
+            .diff-cell span {
+                display: inline-block;
+                margin-left: 5px;
+            }
+
+            /* Hide 'from prev' if really tight, or stack */
+            .diff-prev { display: none !important; }
+
+            /* Make pending score display below total on very small screens? */
+            .score-cell {
+                display: flex;
+                flex-direction: column;
+                align-items: flex-end;
+                justify-content: center;
+            }
+            .pending-score { margin-left: 0; }
+        }
+
+        /* Landscape on Phone */
+        @media (max-height: 500px) and (orientation: landscape) {
+            h1 { font-size: 1.5rem; margin: 0; }
+            #roundDisplay { font-size: 1rem; padding: 2px 10px; margin: 2px; }
+            .updating-indicator { font-size: 0.8rem; margin: 0; }
+            .scoreboard td { padding: 5px 10px; font-size: 1.5rem; }
+            .scoreboard th { padding: 5px 10px; }
         }
 
         /* --- Utilities --- */
@@ -172,56 +245,54 @@
 
         .status-bar {
             position: absolute;
-            bottom: 10px;
-            right: 10px;
-            font-size: 0.8em;
+            bottom: 5px;
+            right: 5px;
+            font-size: 0.7em;
             color: #444;
-            pointer-events: none; /* Don't block clicks if it overlays something */
+            pointer-events: none;
         }
     </style>
 </head>
 <body>
 
-    <div id="scaleWrapper">
-        <div class="container" id="mainContainer">
-            <!-- Scoreboard View -->
-            <div id="scoreboardView" class="fade-in" style="width: 100%; display: flex; flex-direction: column; align-items: center;">
-                <h1>Mexican Train Live</h1>
-                <div id="roundDisplay">Round: -</div>
-                <div id="updatingIndicator" class="updating-indicator hidden">Updating numbers...</div>
+    <div class="container" id="mainContainer">
+        <!-- Scoreboard View -->
+        <div id="scoreboardView" class="fade-in">
+            <h1>Mexican Train Live</h1>
+            <div id="roundDisplay">Round: -</div>
+            <div id="updatingIndicator" class="updating-indicator hidden">Updating numbers...</div>
 
-                <table class="scoreboard">
-                    <thead>
-                        <tr>
-                            <th class="rank-cell">Rank</th>
-                            <th>Player</th>
-                            <th class="score-cell">Total Score</th>
-                            <th class="diff-cell">Behind Leader / Prev</th>
-                        </tr>
-                    </thead>
-                    <tbody id="scoreboardBody">
-                        <!-- Rows injected via JS -->
-                    </tbody>
-                </table>
-                <div id="waitingForGame" class="hidden" style="text-align: center; margin-top: 50px; color: #666;">
-                    <h2>Waiting for game to start...</h2>
+            <table class="scoreboard">
+                <thead>
+                    <tr>
+                        <th class="rank-cell">Rank</th>
+                        <th>Player</th>
+                        <th class="score-cell">Total Score</th>
+                        <th class="diff-cell">Behind Leader</th>
+                    </tr>
+                </thead>
+                <tbody id="scoreboardBody">
+                    <!-- Rows injected via JS -->
+                </tbody>
+            </table>
+            <div id="waitingForGame" class="hidden" style="text-align: center; margin-top: 50px; color: #666;">
+                <h2>Waiting for game to start...</h2>
+            </div>
+        </div>
+
+        <!-- Winner View -->
+        <div id="winnerDisplay">
+            <h1>🏆 WINNER! 🏆</h1>
+            <div class="winner-name" id="winnerName">Player</div>
+            <div class="congrats-msg">Congratulations on the victory!</div>
+        </div>
+
+        <!-- Graph View -->
+        <div id="graphDisplay" class="fade-in">
+                <h2 id="graphTitle">Monthly Leaderboard</h2>
+                <div class="chart-container">
+                <canvas id="monthlyChart"></canvas>
                 </div>
-            </div>
-
-            <!-- Winner View -->
-            <div id="winnerDisplay">
-                <h1>🏆 WINNER! 🏆</h1>
-                <div class="winner-name" id="winnerName">Player</div>
-                <div class="congrats-msg">Congratulations on the victory!</div>
-            </div>
-
-            <!-- Graph View -->
-            <div id="graphDisplay" class="fade-in">
-                 <h2 id="graphTitle">Monthly Leaderboard</h2>
-                 <div style="position: relative; height: 80%; width: 100%;">
-                    <canvas id="monthlyChart"></canvas>
-                 </div>
-            </div>
         </div>
     </div>
 
@@ -258,7 +329,7 @@
 
         // --- DOM Elements ---
         const dom = {
-            scaleWrapper: document.getElementById('scaleWrapper'),
+            // scaleWrapper Removed
             scoreboardView: document.getElementById('scoreboardView'),
             scoreboardBody: document.getElementById('scoreboardBody'),
             waitingForGame: document.getElementById('waitingForGame'),
@@ -271,30 +342,10 @@
             updatingIndicator: document.getElementById('updatingIndicator')
         };
 
-        // --- Scaling Logic ---
-        function resizeContent() {
-            const width = window.innerWidth;
-            const height = window.innerHeight;
-            const targetWidth = 1200; // The width our design is based on
-            const targetHeight = 800; // The height our design is based on
-
-            const scaleX = width / targetWidth;
-            const scaleY = height / targetHeight;
-
-            // Choose the smaller scale to fit entirely within the viewport
-            // Subtract a tiny bit to ensure no edge clipping due to rounding
-            const scale = Math.min(scaleX, scaleY) * 0.95;
-
-            dom.scaleWrapper.style.transform = `scale(${scale})`;
-        }
-
-        window.addEventListener('resize', resizeContent);
-        window.addEventListener('DOMContentLoaded', resizeContent);
-
         // --- Logic ---
 
         function init() {
-            resizeContent(); // Initial scale
+            // Removed resizeContent();
 
             if(typeof Chart !== 'undefined' && typeof ChartDataLabels !== 'undefined') {
                 Chart.register(ChartDataLabels);
@@ -379,7 +430,7 @@
                 dom.scoreboardView.classList.remove('hidden');
                 renderScoreboard();
             } else if (viewName === 'winner') {
-                dom.winnerDisplay.style.display = 'block'; // using display:block for animation
+                dom.winnerDisplay.style.display = 'flex'; // Use flex for centering
                 dom.winnerDisplay.classList.remove('hidden');
                 renderWinner();
             } else if (viewName === 'graph') {
@@ -501,6 +552,7 @@
                 let diffHtml = '';
                 if (index > 0) {
                     diffHtml = `<span class="diff-leader">+${diffLeader} from 1st</span>`;
+                    // On small screens, we might hide prev difference via CSS
                     if (diffPrev > 0) {
                         diffHtml += `<span class="diff-prev">+${diffPrev} from prev</span>`;
                     }
