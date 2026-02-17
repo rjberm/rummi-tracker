@@ -93,6 +93,18 @@
         #winnerDisplay .winner-name { font-size: 6em; font-weight: bold; margin: 0.2em 0; color: #fff; text-shadow: 0 0 20px rgba(255, 215, 0, 0.5); }
         #winnerDisplay .congrats-msg { font-size: 2em; color: #aaa; }
 
+        /* --- Round Indicator Styles --- */
+        #roundDisplay {
+            font-size: 1.5em;
+            color: var(--highlight-color);
+            margin-bottom: 20px;
+            font-weight: bold;
+            background: rgba(33, 158, 188, 0.1);
+            padding: 5px 15px;
+            border-radius: 20px;
+            border: 1px solid var(--highlight-color);
+        }
+
         /* --- Graph Styles --- */
         #graphDisplay {
             width: 90%;
@@ -127,6 +139,7 @@
         <!-- Scoreboard View -->
         <div id="scoreboardView" class="fade-in">
             <h1>Mexican Train Live</h1>
+            <div id="roundDisplay">Round: -</div>
             <table class="scoreboard">
                 <thead>
                     <tr>
@@ -189,7 +202,9 @@
         let currentView = 'scoreboard'; // 'scoreboard', 'winner', 'graph'
         let chartInstance = null;
         const IDLE_TIMEOUT_MS = 60000; // 1 minute
+        const GRAPH_DISPLAY_DURATION_MS = 10000; // 10 seconds
         let idleInterval;
+        let cycleInterval;
 
         // --- DOM Elements ---
         const dom = {
@@ -224,15 +239,19 @@
             // Listen to Wins (for Graph)
             const winsQuery = query(collection(db, 'wins'), orderBy('timestamp', 'desc'));
             onSnapshot(winsQuery, (snapshot) => {
-                allWins = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+                // Filter wins ONLY for this game type ('mexican_train')
+                allWins = snapshot.docs
+                    .map(d => ({ id: d.id, ...d.data() }))
+                    .filter(w => w.gameId === 'mexican_train');
+
                 // If we are currently viewing the graph, update it immediately
                 if (currentView === 'graph') {
                     renderGraph();
                 }
             });
 
-            // Start Idle Timer
-            idleInterval = setInterval(checkIdle, 1000);
+            // Start Idle/Cycle Timer
+            idleInterval = setInterval(manageViewCycle, 1000);
         }
 
         function handleGameUpdate(docSnapshot) {
@@ -246,17 +265,19 @@
             }
 
             const data = docSnapshot.data();
+            const previousStatus = currentGameState ? currentGameState.status : null;
             currentGameState = { id: docSnapshot.id, ...data };
 
             // Determine view based on game status
             if (currentGameState.status === 'completed') {
-                // If it just transitioned to completed, showing Winner View is prioritized
-                // Logic: If we are in 'graph', force switch to 'winner'.
-                // If we are in 'scoreboard', switch to 'winner'.
-                // If already in 'winner', just update data.
-                showView('winner');
+                // If newly completed, show Winner immediately
+                if (previousStatus !== 'completed') {
+                    showView('winner');
+                    lastUpdateTimestamp = Date.now(); // Reset timer so we stay on winner for a bit
+                }
+                // If already completed, let the cycle manage views (Winner <-> Graph)
             } else {
-                // Ongoing game
+                // Ongoing game: Always show scoreboard on update
                 showView('scoreboard');
             }
         }
@@ -281,15 +302,46 @@
             }
         }
 
-        function checkIdle() {
-            const timeSinceUpdate = Date.now() - lastUpdateTimestamp;
+        function manageViewCycle() {
+            const now = Date.now();
+            const timeSinceLastUpdate = now - lastUpdateTimestamp;
 
-            // If we are NOT in graph view, and time > timeout, switch to graph
-            if (currentView !== 'graph' && timeSinceUpdate > IDLE_TIMEOUT_MS) {
-                console.log("Idle timeout reached. Switching to Graph.");
-                showView('graph');
+            if (currentGameState && currentGameState.status === 'completed') {
+                // CYCLE: Winner (10s) <-> Graph (10s)
+                // We use a simple modulo logic based on time since completion (or last update)
+                // However, lastUpdateTimestamp resets on db update. Let's use a local cycle state.
+                // Actually, simpler: toggle every 10 seconds.
+
+                // We need a stable reference time. Let's use `now`.
+                // cyclePhase: 0-10s -> Winner, 10-20s -> Graph, 20-30s -> Winner...
+                const cycleDuration = 20000; // 20s total cycle
+                const phase = timeSinceLastUpdate % cycleDuration;
+
+                if (phase < 10000) {
+                    if (currentView !== 'winner') showView('winner');
+                } else {
+                    if (currentView !== 'graph') showView('graph');
+                }
+
+            } else {
+                // ONGOING GAME: Scoreboard (Active) -> Graph (Idle) -> Scoreboard
+
+                if (currentView === 'scoreboard') {
+                    // Switch to graph if idle for > 1 min
+                    if (timeSinceLastUpdate > IDLE_TIMEOUT_MS) {
+                        console.log("Idle timeout reached. Switching to Graph.");
+                        showView('graph');
+                        lastUpdateTimestamp = now; // Reset "timer" for the graph duration
+                    }
+                } else if (currentView === 'graph') {
+                    // Switch back to scoreboard after 10 seconds
+                    if (timeSinceLastUpdate > GRAPH_DISPLAY_DURATION_MS) {
+                        console.log("Graph duration ended. Switching back to Scoreboard.");
+                        showView('scoreboard');
+                        lastUpdateTimestamp = now; // Reset "timer" for the scoreboard idle check
+                    }
+                }
             }
-            // Note: We don't automatically switch BACK from graph unless an update happens (handled in handleGameUpdate)
         }
 
         function renderScoreboard() {
@@ -299,14 +351,21 @@
                  if(!currentGameState) {
                      dom.waitingForGame.classList.remove('hidden');
                      dom.scoreboardBody.innerHTML = '';
+                     document.getElementById('roundDisplay').style.display = 'none';
                      return;
                  }
-                 // If completed, we might still want to show the final scoreboard underneath or handled by Winner view.
-                 // But typically 'scoreboard' view implies active game.
-                 // If status is completed but we are in scoreboard view (unlikely due to handleGameUpdate logic, but possible if manually triggered), show final scores.
             }
 
             dom.waitingForGame.classList.add('hidden');
+
+            // Update Round Display
+            const roundDisplay = document.getElementById('roundDisplay');
+            if (currentGameState.currentRound !== undefined) {
+                roundDisplay.textContent = `Round: ${currentGameState.currentRound}`;
+                roundDisplay.style.display = 'block';
+            } else {
+                roundDisplay.style.display = 'none';
+            }
 
             const playersData = currentGameState.players || {};
             const inProgressScores = currentGameState.inProgressScores || {};
